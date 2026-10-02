@@ -16,6 +16,9 @@ releases/*.zip
 /final-scripts/
 /cheatsheets/
 
+# scripts/ IS the shipped script tree. The old placeholder .gitkeep is gone now
+# that scripts/Install-Common.ps1 lives here. Do not ignore this directory.
+
 # Editor and OS noise.
 .vs/
 .idea/

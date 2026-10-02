@@ -59,8 +59,22 @@ sha256sum -c binaries/payloads.sha256.txt
 .\Install.ps1
 ```
 
-The installer core lands with ticket 02. Until then `Install.ps1` exits with a
-clear "not implemented yet" message rather than pretending to succeed.
+The installer:
+
+1. **Verifies every payload's SHA256** against `binaries/payloads.sha256.json`
+   before touching the system. A corrupted or replaced payload is named and the
+   install stops — nothing is ever installed from an unverified file.
+2. Installs the three MSIs silently with `msiexec /quiet` into the vendor-default
+   `C:\Program Files\…` locations, and installs AutoHotkey v1 and v2 with their
+   own silent switches (`/S` and `/silent`).
+3. **Detects state before each step** and skips anything already installed at the
+   expected version, so running it twice reaches exactly the same end state.
+4. **Refuses ARM64** with a clear message instead of mis-installing.
+5. Requires elevation, and says why.
+
+When a step fails it prints three things and stops: the failing step, the
+underlying cause, and the concrete action to fix it — so a failed install is
+recoverable without outside help. Completed steps are never repeated.
 
 ## Repository layout
 

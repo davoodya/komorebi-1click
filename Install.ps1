@@ -4,44 +4,78 @@
     Komorebi-1click installer.
 .DESCRIPTION
     Installs Komorebi, WHKD, YASB and AutoHotkey (v1 + v2) completely offline
-    from the binaries committed to this repository, then generates the full
-    configuration for the target machine.
+    from the binaries committed to this repository.
 
-    This is the placeholder shipped with ticket 01. The installer logic itself
-    is ticket 02 (see .scratch/komorebi-1click-installer/issues/02-install-core.md).
+    Every payload's SHA256 is verified before anything is installed. Each step
+    detects the current state first and skips itself when the target is already
+    present, so re-running this script always reaches the same end state.
+
+    Configuration generation, startup tasks and the AutoHotkey startup launcher
+    are handled by later tickets (03, 04, 05); this script installs only the
+    five binaries.
 .NOTES
-    The installer resolves every path from its own location, so the repository
-    can be cloned anywhere. Never hardcode a machine-specific path here.
+    All paths resolve from this script's own location, so the repository can be
+    cloned anywhere. There are no machine-specific constants in this file.
 #>
 
 [CmdletBinding()]
-param()
+param(
+    # Skip the interactive elevation prompt. Intended for automation and for the
+    # EXE wrapper, which elevates before it launches this script.
+    [switch]$SkipElevationCheck
+)
 
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 
-# Resolve the repository root from this script's own location, never from CWD.
+# ---------------------------------------------------------------------------
+# Bootstrapping: resolve the repository root and load the installer library.
+# ---------------------------------------------------------------------------
+
+# RepoRoot is the directory that contains this script. Never use the current
+# working directory: a user double-clicking the wrapper starts in System32.
 $RepoRoot = $PSScriptRoot
 
-Write-Host ''
-Write-Host 'Komorebi-1click installer' -ForegroundColor Cyan
-Write-Host 'Repository root:' $RepoRoot -ForegroundColor DarkGray
-Write-Host ''
+. (Join-Path $RepoRoot 'scripts\Install-Common.ps1')
 
-# The installer core is not implemented yet (ticket 02). Fail loudly rather than
-# silently doing nothing, so `irm | iex` never reports a false success.
-$Message = @'
-The installer core is not implemented yet.
+Write-InstallerHeader
 
-This repository currently ships only the payload and provenance foundation
-(ticket 01). The offline installer itself is ticket 02.
+# ---------------------------------------------------------------------------
+# Preconditions: architecture and elevation.
+# ---------------------------------------------------------------------------
 
-You can already verify the committed payloads offline:
+Assert-ArchitectureSupported
 
-    Get-FileHash .\binaries\*.msi, .\binaries\*.exe -Algorithm SHA256
-    # compare against binaries\payloads.sha256.txt
+if (-not $SkipElevationCheck) {
+    Assert-RunningElevated
+}
 
-See the README for the full component and provenance list.
-'@
+# ---------------------------------------------------------------------------
+# Load the payload manifest and verify every binary before touching the system.
+# ---------------------------------------------------------------------------
 
-Write-Host $Message -ForegroundColor Yellow
-exit 1
+$payloads = Get-PayloadManifest -Path (Join-Path $RepoRoot 'binaries\payloads.sha256.json')
+
+Test-PayloadIntegrity -Payloads $payloads -RepoRoot $RepoRoot
+
+# ---------------------------------------------------------------------------
+# Install steps. Each one is state-detected and idempotent.
+# ---------------------------------------------------------------------------
+
+$installSteps = @(
+    { Install-Komorebi    -Payload $payloads['komorebi-0.1.41-x86_64.msi'] }
+    { Install-Whkd        -Payload $payloads['whkd-0.2.10-x86_64.msi'] }
+    { Install-Yasb        -Payload $payloads['yasb-2.0.7-x64.msi'] }
+    { Install-AutoHotkeyV1 -Payload $payloads['AutoHotkey.1.1.30.00_setup.exe'] }
+    { Install-AutoHotkeyV2 -Payload $payloads['AutoHotkey_2.0.12_setup.exe'] }
+)
+
+foreach ($step in $installSteps) {
+    & $step
+}
+
+# ---------------------------------------------------------------------------
+# Done.
+# ---------------------------------------------------------------------------
+
+Write-InstallerFooter
