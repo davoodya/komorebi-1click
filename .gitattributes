@@ -1,0 +1,14 @@
+# Line endings: this repo is authored and consumed on Windows.
+* text=auto eol=crlf
+
+# Vendored third-party binaries must never be normalized or smudged.
+*.msi  binary
+*.exe  binary
+*.zip  binary
+*.png  binary
+*.jpg  binary
+*.ico  binary
+*.pdf  binary
+
+# Hash lists stay LF so sha256sum/git stay consistent on every platform.
+payloads.sha256.txt text eol=lf

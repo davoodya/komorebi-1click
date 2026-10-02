@@ -1,0 +1,27 @@
+# Releases are built artifacts, not source. Keep the published EXE out of the
+# repository — it is distributed via GitHub Releases instead.
+releases/*.exe
+releases/*.msi
+releases/*.zip
+
+# Build/test scratch that must never be committed.
+[Ss]cratch/
+[Tt]emp/
+*.log
+
+# Working trees that still carry machine-specific paths. These are unblocked and
+# committed by later tickets once they are portable:
+#   final-scripts/ -> becomes scripts/ in ticket 06 (path parameterization)
+#   cheatsheets/   -> published docs in ticket 03 (machine paths removed)
+/final-scripts/
+/cheatsheets/
+
+# Editor and OS noise.
+.vs/
+.idea/
+*.user
+*.suo
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/

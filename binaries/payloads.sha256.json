@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "project": "komorebi-1click",
+  "generated_at": "2026-10-02",
+  "description": "Provenance record for every redistributed binary. Install.ps1 verifies each sha256 before installing.",
+  "verification": "Get-FileHash <file> -Algorithm SHA256, or from the repo root: sha256sum -c binaries/payloads.sha256.txt",
+  "binaries": [
+    {
+      "file": "binaries/komorebi-0.1.41-x86_64.msi",
+      "product": "Komorebi",
+      "version": "0.1.41",
+      "vendor": "LGUG2Z",
+      "license": "licenses/LICENSE-komorebi.md",
+      "official_release_url": "https://github.com/LGUG2Z/komorebi/releases/download/v0.1.41/komorebi-0.1.41-x86_64.msi",
+      "note": "Installed silently with msiexec into the vendor-default C:\\Program Files\\komorebi",
+      "sha256": "BB91B972089DCFADD603656AD5535DC413071B9A17573B0624E62AC51DAFD9D3",
+      "size_bytes": 28233728
+    },
+    {
+      "file": "binaries/whkd-0.2.10-x86_64.msi",
+      "product": "WHKD",
+      "version": "0.2.10",
+      "vendor": "LGUG2Z",
+      "license": "licenses/LICENSE-whkd.md",
+      "official_release_url": "https://github.com/LGUG2Z/whkd/releases/download/v0.2.10/whkd-0.2.10-x86_64.msi",
+      "note": "Installed silently with msiexec into the vendor-default C:\\Program Files\\whkd",
+      "sha256": "54EE6AE13F5F70764779A3ACA52103843A00450653AFC68D0DAB8F63D43D2638",
+      "size_bytes": 929792
+    },
+    {
+      "file": "binaries/yasb-2.0.7-x64.msi",
+      "product": "YASB Reborn",
+      "version": "2.0.7",
+      "vendor": "AmN",
+      "license": "licenses/LICENSE-yasb.txt",
+      "official_release_url": "https://github.com/amnweb/yasb/releases/download/v2.0.7/yasb-2.0.7-x64.msi",
+      "note": "Installed silently with msiexec; autostart is enabled post-install with yasbc enable-autostart",
+      "sha256": "C93B3EB24FCEB64B8BAEFE694A947FECD31A7E58F0939BA61296048124EDBE8B",
+      "size_bytes": 37707776
+    },
+    {
+      "file": "binaries/AutoHotkey.1.1.30.00_setup.exe",
+      "product": "AutoHotkey v1",
+      "version": "1.1.30.00",
+      "vendor": "Lexikos",
+      "license": "licenses/AutoHotkey-GPLv2.txt",
+      "official_release_url": "https://github.com/AutoHotkey/AutoHotkey/releases/download/v1.1.30.00/AutoHotkey_1.1.30.00_setup.exe",
+      "note": "Runs the v1 scripts (autocorrect.ahk, ChangeLangF3.ahk) via C:\\Program Files\\AutoHotkey\\AutoHotkey.exe",
+      "sha256": "8F9265100AA2E337034C5DAB60DD4573DCEEC10CB49CC6A8AD7038BE38A7ACC6",
+      "size_bytes": 3174012
+    },
+    {
+      "file": "binaries/AutoHotkey_2.0.12_setup.exe",
+      "product": "AutoHotkey v2",
+      "version": "2.0.12",
+      "vendor": "Lexikos",
+      "license": "licenses/AutoHotkey-GPLv2.txt",
+      "official_release_url": "https://github.com/AutoHotkey/AutoHotkey/releases/download/v2.0.12/AutoHotkey_2.0.12_setup.exe",
+      "note": "Runs the v2 script (NewFile.ahk) via C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe",
+      "sha256": "4E1E3123DD85D3AC65A0803B08DD89B9B12B5A00B9F566782855332D03E5FE26",
+      "size_bytes": 3000320
+    },
+    {
+      "file": "binaries/Ahk2Exe.exe",
+      "product": "AutoHotkey Script Compiler (Ahk2Exe)",
+      "version": "1.1.37.02a2 (v1-line compiler)",
+      "vendor": "Lexikos",
+      "license": "licenses/AutoHotkey-GPLv2.txt",
+      "official_release_url": "https://github.com/AutoHotkey/AutoHotkey/releases/tag/v1.1.30.00",
+      "note": "Reference only. NOT invoked by Install.ps1 (ADR-0010): the v1 compiler cannot compile the v2 script, and the working mechanism is .ahk scripts launched by a generated AppRunner.vbs. Provenance: this byte-for-byte identical file is shipped by the AutoHotkey 1.1.30.00 installer (C:\\Program Files\\AutoHotkey\\Ahk2Exe.exe). It is NOT the Compiler/Ahk2Exe.exe member of the v1.1.37.02 release zip (that file has a different SHA256).",
+      "sha256": "E54A599B19BAA5C1688849BBAE7A9CF049EEFCCD4F704C67941B40DA13A625B2",
+      "size_bytes": 995328
+    }
+  ]
+}
