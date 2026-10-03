@@ -92,6 +92,22 @@ try {
 if ($configurationFailed) { exit 2 }
 
 # ---------------------------------------------------------------------------
+# Startup machinery.
+# ---------------------------------------------------------------------------
+# Registers the Komorebi logon task and the watchdog (both at RunLevel Highest
+# so elevated windows stay manageable), enables YASB autostart, and makes sure
+# komorebic.exe is on PATH before anything launches.
+
+$startupFailed = $false
+try {
+    Install-StartupTasks -RepoRoot $RepoRoot
+} catch {
+    Report-InstallerFailure -Step 'Set up startup tasks' -ErrorRecord $_
+    $startupFailed = $true
+}
+if ($startupFailed) { exit 3 }
+
+# ---------------------------------------------------------------------------
 # Done.
 # ---------------------------------------------------------------------------
 

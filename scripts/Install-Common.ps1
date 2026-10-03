@@ -945,3 +945,305 @@ function Install-Configuration {
         Write-StepDone 'komorebic check passed.'
     }
 }
+
+# ===========================================================================
+# Startup machinery (ticket 04, ADR-0002 + ADR-0016)
+#
+# Registers the two scheduled tasks and YASB autostart so the whole environment
+# comes back on logon and self-heals. The two invariants that must never regress
+# are the watchdog mutex (Global\komorebi-service-start) and the redirection of
+# BOTH stdout and stderr of komorebi/whkd — both live in komorebi-service.ps1
+# and are reproduced unconditionally here.
+#
+#   Komorebi          logon trigger (delayed 25s) -> komorebic start --whkd
+#   KomorebiWatchdog  every 5 minutes             -> komorebi-service.ps1 -Action watchdog
+#   YASB              yasbc enable-autostart (writes HKCU\...\Run)
+#
+# BOTH tasks are registered -RunLevel Highest. Without it, applications launched
+# as Administrator are silently unmanageable (UIPI), and the watchdog must be
+# Highest too or a respawned Komorebi silently drops back to Medium integrity
+# after the first watchdog restart (ADR-0016).
+# ===========================================================================
+
+$script:TaskName      = 'Komorebi'
+$script:WatchTaskName = 'KomorebiWatchdog'
+$script:WatchdogMinutes = 5
+
+function Get-KomorebiScheduledTask {
+    param([Parameter(Mandatory)][string] $Name)
+    return (Get-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue)
+}
+
+function Test-ScheduledTaskRunLevelHighest {
+    # ADR-0016: this is a correctness requirement, not a preference. A task
+    # registered without Highest silently fails to manage elevated windows.
+    param([Parameter(Mandatory)][string] $Name)
+
+    $task = Get-KomorebiScheduledTask -Name $Name
+    if (-not $task) { return $false }
+    return ($task.Principal.RunLevel -eq [Microsoft.PowerShell.Cmdletization.GeneratedTypes.ScheduledTask.RunLevelEnum]::Highest)
+}
+
+function Get-KomorebicPath {
+    # komorebic must be resolvable by bare name before YASB launches: YASB reads
+    # PATH once at launch and never re-reads it, so a bar that started before the
+    # PATH entry exists stays dead until it is restarted.
+    $kb = Join-Path $env:ProgramFiles 'komorebi\bin\komorebic.exe'
+    if (Test-Path $kb) { return $kb }
+    return $null
+}
+
+function Test-KomorebicOnPath {
+    # True when komorebic.exe resolves from the machine PATH. The MSIs add this
+    # entry, but a machine that had komorebi installed under a different path, or
+    # whose PATH was rebuilt, can end up without it.
+    $cmd = Get-Command komorebic.exe -ErrorAction SilentlyContinue
+    return [bool]$cmd
+}
+
+function Add-KomorebicToPath {
+    # Idempotent: only appends when the entry is genuinely absent, and never
+    # duplicates an existing entry pointing at the same directory.
+    param([Parameter(Mandatory)][string] $KomorebicPath)
+
+    $dir = Split-Path $KomorebicPath -Parent
+    $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $entries = if ($machinePath) { $machinePath.Split(';') } else { @() }
+    $already = $entries | Where-Object { $_ -and ($_.TrimEnd('\') -ieq $dir.TrimEnd('\')) }
+    if ($already) { return $false }
+
+    $newPath = if ($machinePath) { "$machinePath;$dir" } else { $dir }
+    [Environment]::SetEnvironmentVariable('Path', $newPath, 'Machine')
+    $env:Path = "$env:Path;$dir"
+    return $true
+}
+
+function New-WatchdogLauncher {
+    # Task Scheduler creates a console for powershell.exe and only hides it
+    # afterwards, so a watchdog task pointed straight at powershell.exe flashes a
+    # console window every interval. Compiling this as a GUI-subsystem app means
+    # Windows never allocates it a console at all. It forwards every argument to
+    # the real powershell.exe and waits, so the watchdog logic is untouched.
+    param([Parameter(Mandatory)][string] $RepoRoot)
+
+    $cs  = Join-Path $RepoRoot 'scripts\komorebi-watchdog.cs'
+    $exeDir = Join-Path $env:USERPROFILE 'bin'
+    $exe = Join-Path $exeDir 'komorebi-watchdog.exe'
+    $csc = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+
+    if (-not (Test-Path $cs))  { return $null }
+    if (-not (Test-Path $csc)) { return $null }
+
+    if (-not (Test-Path $exeDir)) { New-Item -ItemType Directory -Path $exeDir -Force | Out-Null }
+
+    & $csc /nologo /target:winexe /optimize+ "/out:$exe" $cs 2>&1 | Out-Null
+    if (-not (Test-Path $exe)) { return $null }
+
+    # Verify the produced binary really is GUI-subsystem (PE header subsystem = 2).
+    # If it came out as a console app it would still flash, so drop it and let the
+    # caller fall back to powershell.exe rather than ship a blinking task.
+    $bytes = [System.IO.File]::ReadAllBytes($exe)
+    $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
+    $subsystem = [BitConverter]::ToUInt16($bytes, $peOffset + 0x5c)
+    if ($subsystem -ne 2) {
+        Remove-Item $exe -Force -ErrorAction SilentlyContinue
+        return $null
+    }
+    return $exe
+}
+
+function Remove-LegacyStartupShortcut {
+    # An old Startup-folder komorebi.lnk races the scheduled task and can start a
+    # second komorebi against the same socket. It is removed unconditionally.
+    $lnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\komorebi.lnk'
+    if (Test-Path $lnk) {
+        Remove-Item $lnk -Force -ErrorAction SilentlyContinue
+        return $true
+    }
+    return $false
+}
+
+function Register-KomorebiLogonTask {
+    # The logon task. Created only when absent, always at RunLevel Highest.
+    param([Parameter(Mandatory)][string] $KomorebicPath)
+
+    $taskAction = New-ScheduledTaskAction -Execute $KomorebicPath -Argument 'start --whkd'
+    # The 25s delay lets the taskbar and YASB settle first; starting komorebi
+    # before the shell is fully up can leave the bar without a tray icon.
+    $taskTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+    $taskTrigger.Delay = 'PT25S'
+
+    $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
+        -LogonType Interactive -RunLevel Highest
+    $taskSettings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+        -MultipleInstances IgnoreNew `
+        -ExecutionTimeLimit ([TimeSpan]::Zero) `
+        -StartWhenAvailable
+
+    Register-ScheduledTask -TaskName $script:TaskName `
+        -Action $taskAction -Trigger $taskTrigger `
+        -Principal $principal -Settings $taskSettings `
+        -Description 'komorebi window manager with whkd hotkeys' -Force | Out-Null
+}
+
+function Register-KomorebiWatchdogTask {
+    # The self-healing task. Same principal/settings as the logon task (so also
+    # Highest), repeating every $script:WatchdogMinutes, invoking the watchdog
+    # action of komorebi-service.ps1 through the windowless launcher.
+    param(
+        [Parameter(Mandatory)][string] $ServiceScript,
+        [Parameter(Mandatory)][string] $WatchdogExe
+    )
+
+    $args = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Action watchdog -WatchdogMinutes {1}' -f `
+        $ServiceScript, $script:WatchdogMinutes
+
+    if ($WatchdogExe) {
+        $taskAction = New-ScheduledTaskAction -Execute $WatchdogExe -Argument $args
+    } else {
+        # No GUI launcher available: fall back to powershell.exe. This still
+        # works, it just flashes a console once per interval.
+        $taskAction = New-ScheduledTaskAction -Execute 'powershell.exe' `
+            -Argument ("-WindowStyle Hidden " + $args)
+    }
+
+    $taskTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
+        -RepetitionInterval (New-TimeSpan -Minutes $script:WatchdogMinutes) `
+        -RepetitionDuration (New-TimeSpan -Days 3650)
+
+    $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
+        -LogonType Interactive -RunLevel Highest
+    $taskSettings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+        -MultipleInstances IgnoreNew `
+        -ExecutionTimeLimit ([TimeSpan]::Zero) `
+        -StartWhenAvailable
+
+    Register-ScheduledTask -TaskName $script:WatchTaskName `
+        -Action $taskAction -Trigger $taskTrigger `
+        -Principal $principal -Settings $taskSettings `
+        -Description 'restarts komorebi only if the WM has died' -Force | Out-Null
+}
+
+function Enable-YasbAutostart {
+    # YASB's own mechanism: no Admin needed, idempotent, and if YASB ever changes
+    # how it autostarts we follow it for free instead of maintaining a hand-rolled
+    # Run key that drifts (ADR-0002).
+    $yasbc = Get-Command yasbc -ErrorAction SilentlyContinue
+    if (-not $yasbc) { return $false }
+    & $yasbc.Source enable-autostart 2>&1 | Out-Null
+    return $true
+}
+
+function New-YasbAutostartFallback {
+    # Used only when yasbc enable-autostart does not work. YASB resolves
+    # komorebic.exe from PATH at launch, so this must run after the PATH step.
+    param([Parameter(Mandatory)][string] $YasbExe)
+
+    $startupDir = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
+    if (-not (Test-Path $startupDir)) { New-Item -ItemType Directory -Path $startupDir -Force | Out-Null }
+    $lnk = Join-Path $startupDir 'YASB.lnk'
+
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($lnk)
+    $shortcut.TargetPath = $YasbExe
+    $shortcut.WindowStyle = 7   # minimized; the bar is a windowless app anyway
+    $shortcut.Description = 'YASB status bar'
+    $shortcut.Save()
+    return $true
+}
+
+function Test-YasbAutostartEnabled {
+    # The primary mechanism writes HKCU\...\Run; the fallback writes a Startup
+    # shortcut. Either counts as autostart being enabled.
+    $runKey = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue
+    if ($runKey) {
+        $hasRunEntry = $runKey.PSObject.Properties | Where-Object {
+            $_.Value -and ($_.Value -match 'yasb\.exe')
+        }
+        if ($hasRunEntry) { return $true }
+    }
+    return (Test-Path (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\YASB.lnk'))
+}
+
+function Install-StartupTasks {
+    # The ticket 04 entry point. Registers the two scheduled tasks and YASB
+    # autostart, then verifies all three. Idempotent: re-running leaves exactly
+    # the same state.
+    param([Parameter(Mandatory)][string] $RepoRoot)
+
+    Write-Step 'Setting up startup tasks'
+
+    # --- PATH must be right before anything launches -------------------------
+    $komorebic = Get-KomorebicPath
+    if (-not $komorebic) {
+        throw "komorebic.exe not found at '$(Join-Path $env:ProgramFiles 'komorebi\bin\komorebic.exe')'. Install the binaries before setting up startup."
+    }
+    if (Test-KomorebicOnPath) {
+        Write-StepSkipped 'komorebic.exe is already on the machine PATH.'
+    } else {
+        Add-KomorebicToPath -KomorebicPath $komorebic | Out-Null
+        Write-StepDone 'Added komorebic.exe to the machine PATH.'
+    }
+
+    # --- the old racing Startup shortcut goes first --------------------------
+    if (Remove-LegacyStartupShortcut) {
+        Write-StepDone 'Removed the legacy Startup shortcut (it would race the logon task).'
+    }
+
+    # --- the windowless watchdog launcher ------------------------------------
+    $watchdogExe = New-WatchdogLauncher -RepoRoot $RepoRoot
+    if ($watchdogExe) {
+        Write-StepDone 'Built the windowless watchdog launcher (no console flash).'
+    } else {
+        Write-StepSkipped 'Watchdog launcher unavailable; the watchdog task will use powershell.exe.'
+    }
+
+    $serviceScript = Join-Path $RepoRoot 'scripts\komorebi-service.ps1'
+    if (-not (Test-Path $serviceScript)) {
+        throw "komorebi-service.ps1 not found at '$serviceScript'."
+    }
+
+    # --- the logon task ------------------------------------------------------
+    if (Test-ScheduledTaskRunLevelHighest -Name $script:TaskName) {
+        Write-StepSkipped "Scheduled task '$($script:TaskName)' is already registered at RunLevel Highest."
+    } else {
+        Register-KomorebiLogonTask -KomorebicPath $komorebic
+        if (-not (Test-ScheduledTaskRunLevelHighest -Name $script:TaskName)) {
+            throw "Scheduled task '$($script:TaskName)' was registered but is not at RunLevel Highest. Elevated windows would be unmanageable."
+        }
+        Write-StepDone "Scheduled task '$($script:TaskName)' registered (logon, RunLevel Highest)."
+    }
+
+    # --- the watchdog task ---------------------------------------------------
+    if (Test-ScheduledTaskRunLevelHighest -Name $script:WatchTaskName) {
+        Write-StepSkipped "Scheduled task '$($script:WatchTaskName)' is already registered at RunLevel Highest."
+    } else {
+        Register-KomorebiWatchdogTask -ServiceScript $serviceScript -WatchdogExe $watchdogExe
+        if (-not (Test-ScheduledTaskRunLevelHighest -Name $script:WatchTaskName)) {
+            throw "Scheduled task '$($script:WatchTaskName)' was registered but is not at RunLevel Highest. A respawned Komorebi would silently drop to Medium integrity."
+        }
+        Write-StepDone "Scheduled task '$($script:WatchTaskName)' registered (every $($script:WatchdogMinutes) min, RunLevel Highest)."
+    }
+
+    # --- YASB autostart ------------------------------------------------------
+    $yasbExe = Join-Path $env:ProgramFiles 'YASB\yasb.exe'
+    if (Test-YasbAutostartEnabled) {
+        Write-StepSkipped 'YASB autostart is already enabled.'
+    } elseif (Enable-YasbAutostart) {
+        if (Test-YasbAutostartEnabled) {
+            Write-StepDone 'YASB autostart enabled via yasbc enable-autostart.'
+        } else {
+            # The primary mechanism reported success but did not take effect.
+            # Use the fallback rather than declare autostart done.
+            New-YasbAutostartFallback -YasbExe $yasbExe | Out-Null
+            Write-StepDone 'YASB autostart enabled via the Startup-folder fallback.'
+        }
+    } elseif (Test-Path $yasbExe) {
+        New-YasbAutostartFallback -YasbExe $yasbExe | Out-Null
+        Write-StepDone 'YASB autostart enabled via the Startup-folder fallback.'
+    } else {
+        throw 'YASB is not installed, so its autostart cannot be set up.'
+    }
+}

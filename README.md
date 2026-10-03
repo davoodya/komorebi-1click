@@ -78,6 +78,12 @@ The installer:
    `komorebi-resize.json` is created empty (it is pure runtime state). The YASB
    config's sensor-script path is made repo-relative. Then **`komorebic check`
    validates the result before success is declared.**
+7. **Sets up startup and self-healing:** the `Komorebi` logon task and the
+   `KomorebiWatchdog` task (both `RunLevel Highest`, so applications launched as
+   Administrator stay manageable), the watchdog run through a windowless launcher
+   so it never flashes a console, `komorebic.exe` added to the machine PATH before
+   anything launches, and YASB autostart via `yasbc enable-autostart` with a
+   Startup-folder fallback.
 
 When a step fails it prints three things and stops: the failing step, the
 underlying cause, and the concrete action to fix it — so a failed install is
@@ -94,7 +100,9 @@ config/       portable configuration templates:
                 whkdrc         all hotkey bindings (source paths rewritten at install)
                 applications.json  app-specific rules, verbatim
                 config.yaml    YASB bar/widget config (sensor path rewritten at install)
-scripts/      installer library + sensor script used by the YASB temperature widgets;
+scripts/      installer library; komorebi-service.ps1 (the proven service-control
+              engine behind start/restart/status/watchdog) and its windowless
+              watchdog launcher source; the YASB sensor script; further
               management scripts land here in tickets 06 and 08
 releases/     published Dashboard builds (distributed, not committed)
 Install.ps1   the installer entry point
