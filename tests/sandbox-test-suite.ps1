@@ -222,6 +222,76 @@ Section 'T04.4 — no legacy racing startup shortcut'
 Assert 'no legacy komorebi.lnk in the Startup folder' (-not (Test-Path (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\komorebi.lnk')))
 
 # =============================================================================
+# Ticket 05 — AutoHotkey startup launcher
+# =============================================================================
+Section 'T06.1 — the AppRunner.vbs startup launcher exists and is generated'
+
+$startupDir = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
+$appRunner  = Join-Path $startupDir 'AppRunner.vbs'
+Assert 'AppRunner.vbs exists in the Startup folder' (Test-Path $appRunner)
+
+$ahk = "$Repo\autohotkey"
+Assert 'the three .ahk scripts are shipped under autohotkey\' (
+    (Test-Path "$ahk\autocorrect.ahk") -and
+    (Test-Path "$ahk\ChangeLangF3.ahk") -and
+    (Test-Path "$ahk\NewFile.ahk")
+)
+
+if (Test-Path $appRunner) {
+    $vbs = Get-Content $appRunner -Raw
+
+    # No source-machine path may survive into the generated file.
+    Assert 'AppRunner.vbs contains no source-machine path' (-not ($vbs -like '*H:\*'))
+
+    # The v1 interpreter drives the two v1 scripts.
+    $v1exe = 'C:\Program Files\AutoHotkey\AutoHotkey.exe'
+    Assert 'AppRunner.vbs uses the v1 interpreter for autocorrect.ahk'  ($vbs -like "*$v1exe*$ahk\autocorrect.ahk*")
+    Assert 'AppRunner.vbs uses the v1 interpreter for ChangeLangF3.ahk' ($vbs -like "*$v1exe*$ahk\ChangeLangF3.ahk*")
+
+    # The v2 interpreter drives the v2 script.
+    $v2exe = 'C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe'
+    Assert 'AppRunner.vbs uses the v2 interpreter for NewFile.ahk'      ($vbs -like "*$v2exe*$ahk\NewFile.ahk*")
+
+    # All three run hidden, exactly as on the source machine.
+    Assert 'AppRunner.vbs launches every script hidden (RunHidden)' (($vbs -split "`n" | Where-Object { $_ -like 'RunHidden *' }).Count -ge 3)
+}
+
+Section 'T06.2 — every interpreter the VBS names actually exists'
+
+if (Test-Path $appRunner) {
+    $vbs = Get-Content $appRunner -Raw
+    foreach ($exe in @('C:\Program Files\AutoHotkey\AutoHotkey.exe', 'C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe')) {
+        Assert ("interpreter referenced by AppRunner.vbs exists: $exe") ((Test-Path $exe) -and ($vbs -like "*$exe*"))
+    }
+}
+
+Section 'T06.3 — the whkdrc hotkeys all resolve (no dead bindings)'
+
+# whkdrc's alt+o calls a wrapper the installer generates next to it; the two
+# resize bindings point at the komorebi-resize.json the installer creates; the
+# transparency hotkey is a built-in komorebi command. None may be left pointing
+# at a file that was never installed.
+$whkdrc = Join-Path $UserHome '.config\whkdrc'
+Assert 'whkdrc exists' (Test-Path $whkdrc)
+if (Test-Path $whkdrc) {
+    $w = Get-Content $whkdrc -Raw
+    Assert 'whkdrc no longer references the unshipped toggle-transparency.ps1' (-not ($w -like '*toggle-transparency.ps1*'))
+    $restartWrapper = Join-Path $UserHome '.config\restart-whkd.cmd'
+    Assert 'the restart-whkd.cmd wrapper was generated' (Test-Path $restartWrapper)
+    if (Test-Path $restartWrapper) {
+        $c = Get-Content $restartWrapper -Raw
+        Assert 'restart-whkd.cmd has no leftover placeholder' (-not ($c -like '*__KOMOREBIC_EXE__*'))
+        Assert 'restart-whkd.cmd stops komorebi'    ($c -like '*" stop*')
+        Assert 'restart-whkd.cmd restarts with --whkd' ($c -like '*" start --whkd*')
+    }
+}
+
+Section 'T06.4 — no script is compiled to EXE (ADR-0010)'
+
+# The scripts must ship as .ahk, started by the VBS, never compiled.
+Assert 'no compiled AutoHotkey EXE was produced in autohotkey\' (-not (Test-Path "$ahk\*.exe"))
+
+# =============================================================================
 # Cross-ticket — idempotency (re-run the whole installer)
 # =============================================================================
 Section 'T05 — idempotency: run the installer a second time'

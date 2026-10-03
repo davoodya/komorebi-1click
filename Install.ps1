@@ -108,6 +108,22 @@ try {
 if ($startupFailed) { exit 3 }
 
 # ---------------------------------------------------------------------------
+# AutoHotkey startup launcher (ticket 05).
+# ---------------------------------------------------------------------------
+# Generates AppRunner.vbs in the Startup folder from the three .ahk scripts
+# shipped under autohotkey\. The VBS is regenerated, never copied, so every
+# path in it points at this machine's interpreters and this repository.
+
+$ahkFailed = $false
+try {
+    Install-AutoHotkeyStartup -RepoRoot $RepoRoot
+} catch {
+    Report-InstallerFailure -Step 'Set up the AutoHotkey startup launcher' -ErrorRecord $_
+    $ahkFailed = $true
+}
+if ($ahkFailed) { exit 4 }
+
+# ---------------------------------------------------------------------------
 # Done.
 # ---------------------------------------------------------------------------
 
