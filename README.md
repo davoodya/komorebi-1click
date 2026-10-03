@@ -71,6 +71,13 @@ The installer:
    expected version, so running it twice reaches exactly the same end state.
 4. **Refuses ARM64** with a clear message instead of mis-installing.
 5. Requires elevation, and says why.
+6. **Generates the full configuration** from portable templates: `whkdrc` and
+   `applications.json` are copied with the source machine's paths rewritten to the
+   target user, `komorebi.json` gets one 9-workspace monitor block per detected
+   display plus `display_index_preferences` generated from the live hardware, and
+   `komorebi-resize.json` is created empty (it is pure runtime state). The YASB
+   config's sensor-script path is made repo-relative. Then **`komorebic check`
+   validates the result before success is declared.**
 
 When a step fails it prints three things and stops: the failing step, the
 underlying cause, and the concrete action to fix it — so a failed install is
@@ -81,8 +88,14 @@ recoverable without outside help. Completed steps are never repeated.
 ```
 binaries/     the five installers (MSI + setup EXE) + provenance records
 licenses/     verbatim license text for every redistributed binary
-config/       shipped configuration templates (ticket 03)
-scripts/      management scripts: start/stop/restart, backup, cleanup (tickets 06, 08)
+config/       portable configuration templates:
+                komorebi.json  minus monitors / display_index_preferences /
+                               app_specific_configuration_path (generated at install)
+                whkdrc         all hotkey bindings (source paths rewritten at install)
+                applications.json  app-specific rules, verbatim
+                config.yaml    YASB bar/widget config (sensor path rewritten at install)
+scripts/      installer library + sensor script used by the YASB temperature widgets;
+              management scripts land here in tickets 06 and 08
 releases/     published Dashboard builds (distributed, not committed)
 Install.ps1   the installer entry point
 ```

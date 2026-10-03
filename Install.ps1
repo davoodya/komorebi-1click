@@ -75,6 +75,23 @@ foreach ($step in $installSteps) {
 }
 
 # ---------------------------------------------------------------------------
+# Configuration generation.
+# ---------------------------------------------------------------------------
+# Writes the Komorebi/WHKD/YASB configuration for THIS machine from the portable
+# templates: the monitor layout and display preferences are generated from the
+# live hardware, everything else is copied byte-for-byte, and komorebic check
+# validates the result before success is declared.
+
+$configurationFailed = $false
+try {
+    Install-Configuration -RepoRoot $RepoRoot
+} catch {
+    Report-InstallerFailure -Step 'Generate configuration' -ErrorRecord $_
+    $configurationFailed = $true
+}
+if ($configurationFailed) { exit 2 }
+
+# ---------------------------------------------------------------------------
 # Done.
 # ---------------------------------------------------------------------------
 

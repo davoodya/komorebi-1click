@@ -1,0 +1,148 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LGUG2Z/komorebi/v0.1.41/schema.json",
+  "app_specific_configuration_path": null,
+  "window_hiding_behaviour": "Cloak",
+  "cross_boundary_behaviour": "Monitor",
+  "cross_monitor_move_behaviour": "Insert",
+  "unmanaged_window_operation_behaviour": "Op",
+  "floating_layer_behaviour": "Tile",
+  "window_container_behaviour": "Create",
+  "default_workspace_padding": 0,
+  "default_container_padding": 0,
+  "resize_delta": 20,
+  "border": true,
+  "border_width": 1,
+  "border_offset": -1,
+  "border_colours": {
+    "unfocused": "#2b2b2b",
+    "single": "#00e5ff",
+    "stack": "#7ee787",
+    "monocle": "#f778ba",
+    "floating": "#e5c07b",
+    "unfocused_locked": "#4a4a4a"
+  },
+  "animation": {
+    "enabled": false
+  },
+  "mouse_follows_focus": true,
+  "ignore_rules": [
+    {
+      "kind": "Exe",
+      "id": "yasb.exe",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Exe",
+      "id": "zebar.exe",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Exe",
+      "id": "komorebi-bar.exe",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Exe",
+      "id": "glazewm.exe",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Exe",
+      "id": "Proxifier.exe",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Exe",
+      "id": "IDMan.exe",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Exe",
+      "id": "PowerToys.PowerLauncher.exe",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Exe",
+      "id": "Lively.exe",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Class",
+      "id": "Network Connections",
+      "matching_strategy": "Regex"
+    },
+    {
+      "kind": "Class",
+      "id": "HwndWrapper\\[PowerToys\\..*",
+      "matching_strategy": "Regex"
+    },
+    {
+      "kind": "Title",
+      "id": ".* - Peek",
+      "matching_strategy": "Regex"
+    },
+    {
+      "kind": "Title",
+      "id": "Command Palette",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Title",
+      "id": "Picture.in.Picture",
+      "matching_strategy": "Regex"
+    }
+  ],
+  "monitors": null,
+  "display_index_preferences": null,
+  "ignored_duplicate_monitor_serial_ids": [],
+  "manage_rules": [
+    {
+      "kind": "Exe",
+      "id": "Hermes.exe",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Exe",
+      "id": "Code.exe",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Exe",
+      "id": "code.exe",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Exe",
+      "id": "cursor.exe",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Exe",
+      "id": "windsurf.exe",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Exe",
+      "id": "Postman.exe",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Exe",
+      "id": "Obsidian.exe",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Exe",
+      "id": "Notion.exe",
+      "matching_strategy": "Equals"
+    }
+  ],
+  "layered_whitelist": [
+    {
+      "kind": "Class",
+      "id": "mintty",
+      "matching_strategy": "Equals"
+    }
+  ],
+  "tray_and_multi_window_applications": []
+}

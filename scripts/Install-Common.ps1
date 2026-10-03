@@ -572,3 +572,376 @@ function Install-Yasb {
         -DetectionProbe (Join-Path $env:ProgramFiles 'YASB\yasb.exe') `
         -DisplayName    'YASB'
 }
+
+# ===========================================================================
+# Configuration generation (ticket 03, ADR-0003 + ADR-0016)
+#
+# The repo ships PORTABLE templates under config\ and the installer writes the
+# machine-specific parts at install time, so a target machine ends up
+# byte-for-byte identical to the source machine in everything that is truly
+# portable, and correct in everything that depends on the hardware.
+#
+#   config\komorebi.json     template; monitors / display_index_preferences /
+#                           app_specific_configuration_path are generated
+#   config\whkdrc            verbatim
+#   config\applications.json verbatim
+#   config\config.yaml       YASB; the sensor-script path is rewritten
+#   scripts\sensor-color.ps1 shipped here so the YASB path can be repo-relative
+# ===========================================================================
+
+# The single portable workspace layout. One block of this is emitted per
+# detected monitor. This is the exact layout of the source machine.
+$script:PortableWorkspaceLayout = @(
+    @{ name = '1'; layout = 'BSP' },
+    @{ name = '2'; layout = 'VerticalStack' },
+    @{ name = '3'; layout = 'HorizontalStack' },
+    @{ name = '4'; layout = 'VerticalStack' },
+    @{ name = '5'; layout = 'VerticalStack' },
+    @{ name = '6'; layout = 'VerticalStack' },
+    @{ name = '7'; layout = 'VerticalStack' },
+    @{ name = '8'; layout = 'VerticalStack' },
+    @{ name = '9'; layout = 'VerticalStack' }
+)
+
+function Get-KomorebiConfigHome {
+    # komorebi honours $env:KOMOREBI_CONFIG_HOME and otherwise defaults to
+    # %USERPROFILE%\.config\komorebi. Resolve exactly the way komorebi does so
+    # the generated file lands where komorebi actually reads it from.
+    if ($env:KOMOREBI_CONFIG_HOME) { return $env:KOMOREBI_CONFIG_HOME }
+    return (Join-Path $env:USERPROFILE '.config\komorebi')
+}
+
+function Get-DetectedDisplays {
+    # Returns the GDI display device names in adapter order: DISPLAY1, DISPLAY2...
+    # These are exactly the values komorebi's display_index_preferences expects
+    # (the source machine's own config uses "DISPLAY1".."DISPLAY3"), and they are
+    # hardware-dependent, so they must never be copied.
+    Add-Type -ErrorAction SilentlyContinue -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class KomorebiDisplayEnum {
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    public struct DISPLAY_DEVICE {
+        public int cb;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]  public string DeviceName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceString;
+        public int StateFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceID;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceKey;
+    }
+    [DllImport("user32.dll", CharSet = CharSet.Ansi)]
+    public static extern bool EnumDisplayDevices(string lpDevice, uint iDevNum, ref DISPLAY_DEVICE lpDisplayDevice, uint dwFlags);
+    public static string[] GetDisplays() {
+        var list = new System.Collections.Generic.List<string>();
+        for (uint i = 0; i < 32; i++) {
+            DISPLAY_DEVICE d = new DISPLAY_DEVICE();
+            d.cb = 4 + 32 + 128 + 4 + 128 + 128;
+            if (!EnumDisplayDevices(null, i, ref d, 0)) break;
+            // StateFlags bit 0 = DISPLAY_DEVICE_ATTACHED_TO_DESKTOP. Only attached
+            // displays are part of the layout; a detached one (e.g. a disabled
+            // output on the same GPU) would otherwise consume a workspace block.
+            if ((d.StateFlags & 1) != 1) continue;
+            // komorebi derives its monitor name from the GDI device name with the
+            // "\\.\" device prefix and any child path stripped (windows_api.rs:
+            // device_name.trim_start_matches(r"\\.\").split('\\')[0]). Emit the
+            // same canonical form so the generated value matches the source
+            // machine's "DISPLAY1" style exactly.
+            string n = d.DeviceName.TrimStart(new char[] { '\\', '.' });
+            int cut = n.IndexOf('\\');
+            if (cut >= 0) n = n.Substring(0, cut);
+            list.Add(n);
+        }
+        return list.ToArray();
+    }
+}
+'@ -Language CSharp
+    return [KomorebiDisplayEnum]::GetDisplays()
+}
+
+function Get-GeneratedMonitors {
+    # One MonitorConfig block per detected monitor, each carrying the same
+    # portable 9-workspace layout. The schema only requires `workspaces` on a
+    # MonitorConfig and only `name` on a WorkspaceConfig, so this is valid.
+    param([Parameter(Mandatory)][string[]] $Displays)
+
+    $monitors = @()
+    foreach ($display in $Displays) {
+        $workspaces = @()
+        foreach ($ws in $script:PortableWorkspaceLayout) {
+            $workspaces += [PSCustomObject]@{ name = $ws.name; layout = $ws.layout }
+        }
+        $monitors += [PSCustomObject]@{ workspaces = $workspaces }
+    }
+    , $monitors
+}
+
+function Get-GeneratedDisplayIndexPreferences {
+    # Keys "0".."N-1", values = live display names. Generated, never copied.
+    param([Parameter(Mandatory)][string[]] $Displays)
+
+    $prefs = [ordered]@{}
+    for ($i = 0; $i -lt $Displays.Count; $i++) {
+        $prefs["$i"] = $Displays[$i]
+    }
+    return [PSCustomObject]$prefs
+}
+
+function Test-ConfigUpToDate {
+    # True when the on-disk komorebi.json already reflects this machine's live
+    # hardware, so a re-run regenerates nothing and re-running after a
+    # dock/undock is what triggers the refresh.
+    param([Parameter(Mandatory)][string] $ConfigPath, [Parameter(Mandatory)][string[]] $Displays)
+
+    if (-not (Test-Path $ConfigPath)) { return $false }
+    try {
+        $current = Get-Content $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch { return $false }
+
+    $monitors = @($current.monitors)
+    if ($monitors.Count -ne $Displays.Count) { return $false }
+
+    $prefs = $current.display_index_preferences
+    for ($i = 0; $i -lt $Displays.Count; $i++) {
+        if ($prefs."$i" -ne $Displays[$i]) { return $false }
+    }
+
+    # The portable layout must be intact on every monitor.
+    foreach ($m in $monitors) {
+        if (-not $m.workspaces) { return $false }
+        if (@($m.workspaces).Count -ne $script:PortableWorkspaceLayout.Count) { return $false }
+        for ($w = 0; $w -lt $script:PortableWorkspaceLayout.Count; $w++) {
+            $expect = $script:PortableWorkspaceLayout[$w]
+            $actual = @($m.workspaces)[$w]
+            if ($actual.name -ne $expect.name -or $actual.layout -ne $expect.layout) { return $false }
+        }
+    }
+    return $true
+}
+
+function New-KomorebiConfig {
+    # Emits the final komorebi.json: template + generated monitors + generated
+    # display_index_preferences + the target user's applications.json path.
+    param(
+        [Parameter(Mandatory)][string]   $TemplatePath,
+        [Parameter(Mandatory)][string]   $OutputPath,
+        [Parameter(Mandatory)][string[]] $Displays
+    )
+
+    $template = Get-Content $TemplatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+
+    # app_specific_configuration_path must be rewritten to the TARGET user's
+    # absolute path. Rust does not expand PowerShell-style env vars in this
+    # field, so it cannot be shipped as "%USERPROFILE%\applications.json"
+    # (handoff bug #4: the source config literally contained the source
+    # machine's C:\Users\DavoodYa path).
+    $applicationsPath = Join-Path $env:USERPROFILE 'applications.json'
+    $template.app_specific_configuration_path = $applicationsPath
+
+    $template.monitors = Get-GeneratedMonitors -Displays $Displays
+    $template.display_index_preferences = Get-GeneratedDisplayIndexPreferences -Displays $Displays
+
+    $dir = Split-Path $OutputPath -Parent
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+
+    # Depth 100 covers the nested monitors/workspaces tree. The emitted file is
+    # UTF8 without a BOM: komorebi's JSON parser is serde_json, which is fine
+    # with UTF8, but a BOM on a file that Rust reads via fs::read can surface as
+    # a stray character in error messages.
+    $json = $template | ConvertTo-Json -Depth 100
+    [System.IO.File]::WriteAllText($OutputPath, $json, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function New-Whkdrc {
+    # whkdrc is copied VERBATIM with one exception: the source machine's own
+    # paths are rewritten to the target user's. Three bindings reference files
+    # under the source user's %USERPROFILE% (restart-whkd.cmd, the
+    # komorebi-resize.json save/load targets, toggle-transparency.ps1). Those
+    # hotkeys would silently do nothing on another machine if left as-is — the
+    # same class of bug as the app_specific_configuration_path issue.
+    #
+    # The komorebic.exe path (C:\Progra~1\komorebi\bin\...) is the vendor
+    # install default and stays untouched.
+    param([Parameter(Mandatory)][string] $TemplatePath, [Parameter(Mandatory)][string] $OutputPath)
+
+    $dir = Split-Path $OutputPath -Parent
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+
+    $content = Get-Content $TemplatePath -Raw -Encoding UTF8
+    $targetProfile = $env:USERPROFILE.TrimEnd('\')
+
+    # Use [regex]::Replace rather than the -replace operator: in .NET replacement
+    # strings a literal backslash is an escape prefix, so -replace would double
+    # every backslash in the target path. Passing the text to the Regex.Replace
+    # overload that takes a plain string avoids that interpretation.
+    $rewritten = [regex]::Replace($content, 'C:\\Users\\DavoodYa', $targetProfile)
+
+    [System.IO.File]::WriteAllText($OutputPath, $rewritten, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function New-ApplicationsJson {
+    # applications.json is copied VERBATIM. The companion file must sit next to
+    # the komorebi.json that references it, i.e. in the komorebi config home.
+    param([Parameter(Mandatory)][string] $TemplatePath, [Parameter(Mandatory)][string] $OutputPath)
+
+    $dir = Split-Path $OutputPath -Parent
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    Copy-Item $TemplatePath $OutputPath -Force
+}
+
+function New-KomorebiResizeJson {
+    # Pure runtime state. It is CREATED EMPTY and never shipped with content:
+    # whkdrc binds save-resize / load-resize against it, and shipping one
+    # machine's resize state would apply it to another machine.
+    param([Parameter(Mandatory)][string] $OutputPath)
+
+    $dir = Split-Path $OutputPath -Parent
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    [System.IO.File]::WriteAllText($OutputPath, '', (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function New-YasbConfig {
+    # config.yaml is copied verbatim except the sensor-script path, which is
+    # rewritten to the repo-relative sensor-color.ps1 so it never points at a
+    # machine-specific location (the source machine's config pointed at
+    # C:\Users\DavoodYa\Tools\sensor-color.ps1).
+    #
+    # Escaping note: the YAML file stores the path with doubled backslashes
+    # (YAML's own escaping — `C:\\Users\\...` in the file text, which YAML
+    # unescapes to `C:\Users\...` at parse time). The replacement text must be
+    # escaped the same way, so every single backslash in the target path becomes
+    # two in the written file. In PowerShell `-replace` treats BOTH operands as
+    # regular expressions, so '\\' means a literal backslash.
+    param([Parameter(Mandatory)][string] $TemplatePath, [Parameter(Mandatory)][string] $SensorScript, [Parameter(Mandatory)][string] $OutputPath)
+
+    $dir = Split-Path $OutputPath -Parent
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+
+    $content = Get-Content $TemplatePath -Raw -Encoding UTF8
+    $pattern = '(?<=powershell -NoProfile -ExecutionPolicy Bypass -File )\\?[^"]*?sensor-color\.ps1'
+    # The YAML file stores the path with doubled backslashes, so the replacement
+    # text must be escaped the same way. [regex]::Replace with a plain string
+    # would treat a lone backslash as an escape prefix; use the MatchEvaluator
+    # overload so the replacement is inserted literally.
+    $escapedTarget = $SensorScript -replace '\\', '\\'
+    $rewritten = [regex]::Replace($content, $pattern, { param($m) $escapedTarget })
+
+    [System.IO.File]::WriteAllText($OutputPath, $rewritten, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function Test-GeneratedConfig {
+    # komorebic check is the authority: it parses the generated config and the
+    # referenced files and reports schema/consistency problems. A non-zero exit
+    # code aborts the install rather than declaring success on a broken config.
+    param([Parameter(Mandatory)][string] $Komorebic, [Parameter(Mandatory)][string] $ConfigPath)
+
+    if (-not (Test-Path $Komorebic)) {
+        throw "komorebic.exe is not installed at '$Komorebic'. Cannot validate the generated configuration."
+    }
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $Komorebic
+    $psi.Arguments = "check -k `"$ConfigPath`""
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $stdout = $proc.StandardOutput.ReadToEnd()
+    $stderr = $proc.StandardError.ReadToEnd()
+    $proc.WaitForExit()
+
+    if ($proc.ExitCode -ne 0) {
+        $detail = ($stdout, $stderr | Where-Object { $_ } ) -join "`n"
+        throw ("komorebic check failed (exit {0}): {1}" -f $proc.ExitCode, $detail.Trim())
+    }
+    return $stdout.Trim()
+}
+
+function Install-Configuration {
+    # The ticket 03 entry point. Generates the whole Komorebi/WHKD/YASB config
+    # for this machine and validates it. Every artifact is state-detected, so
+    # re-running regenerates only what the live hardware changed.
+    param(
+        [Parameter(Mandatory)][string] $RepoRoot,
+        [switch] $SkipValidation
+    )
+
+    Write-Step 'Generating configuration'
+
+    $displays = Get-DetectedDisplays
+    if ($displays.Count -eq 0) {
+        throw 'No displays are attached to the desktop. The Komorebi layout needs at least one monitor.'
+    }
+
+    $configHome    = Get-KomorebiConfigHome
+    $komorebiJson  = Join-Path $configHome 'komorebi.json'
+    $whkdrc        = Join-Path $configHome '..\whkdrc'
+    $applications  = Join-Path $configHome 'applications.json'
+    $resizeState   = Join-Path $configHome 'komorebi-resize.json'
+    $yasbConfig    = Join-Path $env:USERPROFILE '.config\yasb\config.yaml'
+    $sensorScript  = Join-Path $RepoRoot 'scripts\sensor-color.ps1'
+    $komorebic     = Join-Path $env:ProgramFiles 'komorebi\bin\komorebic.exe'
+
+    $template = Join-Path $RepoRoot 'config'
+
+    # --- Komorebi -----------------------------------------------------------
+    if (Test-ConfigUpToDate -ConfigPath $komorebiJson -Displays $displays) {
+        Write-StepSkipped ('Komorebi configuration already matches this machine ({0} monitor(s)).' -f $displays.Count)
+    } else {
+        New-KomorebiConfig -TemplatePath (Join-Path $template 'komorebi.json') `
+                           -OutputPath   $komorebiJson `
+                           -Displays     $displays
+        Write-StepDone ('Komorebi configuration generated for {0} monitor(s): {1}.' -f `
+            $displays.Count, ($displays -join ', '))
+    }
+
+    # --- WHKD ----------------------------------------------------------------
+    # whkdrc is generated (source paths rewritten to this user's), so compare
+    # the RENDERED result rather than the template hash.
+    $whkdrcTemplate = Join-Path $template 'whkdrc'
+    $targetProfile = $env:USERPROFILE.TrimEnd('\')
+    $expectedWhkdrc = [regex]::Replace((Get-Content $whkdrcTemplate -Raw -Encoding UTF8), 'C:\\Users\\DavoodYa', $targetProfile)
+    $whkdrcUpToDate = (Test-Path $whkdrc) -and ((Get-Content $whkdrc -Raw -Encoding UTF8) -ceq $expectedWhkdrc)
+    if ($whkdrcUpToDate) {
+        Write-StepSkipped 'whkdrc is already in place.'
+    } else {
+        New-Whkdrc -TemplatePath $whkdrcTemplate -OutputPath $whkdrc
+        Write-StepDone 'whkdrc copied with the target user paths.'
+    }
+
+    # --- applications.json ---------------------------------------------------
+    if ((Test-Path $applications) -and ((Get-FileHash $applications -Algorithm SHA256).Hash -eq (Get-FileHash (Join-Path $template 'applications.json') -Algorithm SHA256).Hash)) {
+        Write-StepSkipped 'applications.json is already in place.'
+    } else {
+        New-ApplicationsJson -TemplatePath (Join-Path $template 'applications.json') -OutputPath $applications
+        Write-StepDone 'applications.json copied.'
+    }
+
+    # --- resize state (created empty, always) --------------------------------
+    New-KomorebiResizeJson -OutputPath $resizeState
+    if ((Get-Item $resizeState).Length -eq 0) {
+        Write-StepDone 'komorebi-resize.json created empty (runtime state).'
+    } else {
+        Write-StepSkipped 'komorebi-resize.json already exists and holds runtime state — left untouched.'
+    }
+
+    # --- YASB ----------------------------------------------------------------
+    if (Test-Path $yasbConfig) {
+        Write-StepSkipped 'YASB configuration already exists — left untouched.'
+    } else {
+        New-YasbConfig -TemplatePath (Join-Path $template 'config.yaml') `
+                       -SensorScript $sensorScript `
+                       -OutputPath   $yasbConfig
+        Write-StepDone 'YASB configuration generated with a repo-relative sensor path.'
+    }
+
+    # --- Validation ----------------------------------------------------------
+    if (-not $SkipValidation) {
+        Write-Step 'Validating the generated configuration'
+        $report = Test-GeneratedConfig -Komorebic $komorebic -ConfigPath $komorebiJson
+        if ($report) {
+            Write-Host ("    {0}" -f ($report -split "`n" | Select-Object -First 6) -join "`n    ") -ForegroundColor DarkGray
+        }
+        Write-StepDone 'komorebic check passed.'
+    }
+}
