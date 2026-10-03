@@ -7,6 +7,6 @@
     </MappedFolder>
   </MappedFolders>
   <LogonCommand>
-    <Command>powershell -NoProfile -ExecutionPolicy Bypass -File C:\Repo\docs\sandbox-test-harness.ps1 -HostRepo C:\Repo</Command>
+    <Command>powershell -NoProfile -ExecutionPolicy Bypass -File C:\Repo\tests\sandbox-test-suite.ps1 -Repo C:\Repo</Command>
   </LogonCommand>
 </Configuration>
