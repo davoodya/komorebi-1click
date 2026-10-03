@@ -9,15 +9,12 @@ releases/*.zip
 [Tt]emp/
 *.log
 
-# Working trees that still carry machine-specific paths. These are unblocked and
-# committed by later tickets once they are portable:
-#   final-scripts/ -> becomes scripts/ in ticket 06 (path parameterization)
-#   cheatsheets/   -> published docs in ticket 03 (machine paths removed)
-/final-scripts/
-/cheatsheets/
-
 # scripts/ IS the shipped script tree. The old placeholder .gitkeep is gone now
 # that scripts/Install-Common.ps1 lives here. Do not ignore this directory.
+
+# cheatsheets/ still carries machine-specific paths (F:\Backups\... references)
+# and is NOT publishable until ticket 03's doc-portability pass removes them.
+/cheatsheets/
 
 # Editor and OS noise.
 .vs/
