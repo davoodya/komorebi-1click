@@ -265,3 +265,67 @@ Call these with `skill_view` before starting:
 - `hermes-agent` — if anything about the Hermes runtime itself is unclear
 - `obsidian` (note-taking) — if a decision needs to outlive the session in the
   vault rather than the repo
+
+---
+
+## Session 2 — Tickets 09 + 10, recovery, and the two open questions
+
+### RECOVERY FIRST
+
+A parallel session had run `git reset --hard` back to `origin/main`, discarding
+**seven** commits (`a72f57c`, `488b995`, `dd25680`, `69c6c2c`, `8618dd7`,
+`e979919`, `c124d59`) — the whole audit-remediation record. The tree looked
+clean and every test passed, so nothing on screen revealed it.
+
+Restored with `git reset --hard c124d59`. That SHA still contains the other
+session's own commits, so nothing of theirs was lost. Re-verified: 4 suites
+green, D4 `try/finally` present in all four restart scripts,
+`7-YASB-RESTART.ps1` still deleted, watchdog `Ready`. Dev ↔ publish `tests/`
+then drifted by CRLF only and was re-synced.
+
+**If work of yours is ever missing from a shared repo with a clean tree: check
+`git reflog` first.**
+
+### Tickets implemented
+
+| Ticket | Commit | State |
+|---|---|---|
+| 09 — EXE install wrapper | `f5363e6` | done, 26/26 |
+| 10 — Admin Dashboard shell | `7b9a045` | done, 123/123 |
+| — `-DiagnoseOnly` × 5 scripts | `1106bfa` | done |
+| — `SCRIPTS-GUIDE.md` English | `afc365b` | done (D11 closed) |
+
+Artifacts:
+- Installer EXE source: `scripts/komorebi-install.cs`, built by
+  `scripts/build-exe.ps1`. The EXE is gitignored — build it where `csc.exe` is.
+- Dashboard EXE: `src/KomorebiDashboard/bin/Release/net8.0-windows/KomorebiDashboard.exe`
+  (151 KB, `dotnet build` only, no Visual Studio needed).
+
+### Bugs found and fixed during implementation
+
+- **D12 HIGH** — the `git reset` above.
+- **D15 HIGH** — six dashboard verbs pointed at `.ps1` files that were never
+  written; every Kill/Start button would have done nothing.
+- **D13/D14 MEDIUM** — `safe-restart.ps1` has no `$RepoRoot`; the guide
+  documented a backup path ticket 06 had already retired.
+- **D16 MEDIUM** — a `WinExe` CLI twin produced no output (an `AttachConsole`
+  "fix" made it worse) then hung on a blocking `OnStartup`.
+- **D17 MEDIUM** — three assertions in my own tests asserted the wrong
+  invariant; each is documented in `bugs-issues.md`.
+
+### Deliberately NOT done — belongs to ticket 14 (Windows Sandbox)
+
+- Running the installer EXE for real (it would install over the live stack).
+- Opening the WPF window (needs an interactive desktop).
+- Clicking GUI buttons — though a click takes the same code path the CLI was
+  proven to take end to end.
+
+### Environment note
+
+`delegation.model` is set to `auto` in the Hermes config, which is not a valid
+model on the Nous provider; subagent dispatch fails immediately with HTTP 404
+and the per-task override is ignored. Ticket 10 was done directly instead of
+being delegated. Worth fixing separately.
+
+**Live stack after everything:** `komorebi=25136 whkd=38808 yasb=47100
+ahk=30420,35436`, watchdog `Ready`, `LastTaskResult=0x0`. Untouched throughout.
