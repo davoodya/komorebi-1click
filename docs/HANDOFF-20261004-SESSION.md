@@ -1,11 +1,42 @@
 # Handoff — komorebi-1click, session 2026-10-04 (Tickets 01–08 + geometry fix)
 
-**Date:** 2026-10-04
+**Date:** 2026-10-04 (audit session — **updated later the same day**)
 **Supersedes:** `~/projects/komorebi-1click/docs/HANDOFF-20261004-TICKETS-01-07.md`
 (that document remains accurate for tickets 01–07 and the whkd/elevation
 postmortems; this one adds Ticket 08, the monitor-geometry fix, the standing
 rules, and the test policy.)
 **Next session focus:** implement **Ticket 09** (EXE wrapper).
+**Ticket order (decided 2026-10-04):** sequential **09 → 10 → 11 → 12 → 13 → 14**.
+
+> ### ⚠️ READ THIS FIRST — later update to this handoff
+> An **audit session** ran after this document was first written. It audited the
+> whole project, closed **10 defects (D1–D10)**, and opened **D11**. The durable
+> reference is now the **`handoff/` directory** — read those four documents
+> instead of re-auditing:
+>
+> - `handoff/komorebi-1click-description.md` — structure, rules, defect ledger
+> - `handoff/komorebi-1click-knowledges.md` — **the traps; read before coding**
+> - `handoff/komorebi-1click-completed-steps.md` — every ticket + commit
+> - `handoff/komorebi-1click-bugs-issues.md` — every bug + D1–D11
+>
+> **What the audit changed:**
+> - **Static suites are now fully green:** `ticket05-06-07` went **61 assertions /
+>   1 failure / exit 1 → 65 / 0 / exit 0** (commit `a72f57c`). `ticket-monitor`
+>   12/12 and `ticket08-ahk` 17/17 were already green.
+> - **`KomorebiWatchdog` was Disabled** on this machine (188 missed runs) and has
+>   been **re-enabled**. It was then found Disabled **again** 90 minutes later,
+>   which proved the cause rather than the state: all four restart scripts
+>   restored the task only on the happy path. They now restore it from a
+>   `finally` — commits `488b995` and `dd25680`. Trap **T11** is closed.
+> - **dev and publish `tests/` are now byte-identical** (7 files). The dev Sandbox
+>   suite had been **stale**, missing the whkd-pairing and elevation tests entirely.
+> - **`7-YASB-RESTART.ps1` was deleted** as a genuine duplicate; its diagnosis half
+>   merged into `restart-yasb.ps1 -DiagnoseOnly`.
+> - **New open defect D11:** `scripts/SCRIPTS-GUIDE.md` is in **Persian** and must
+>   be translated to English.
+>
+> The ticket-status table and the testing numbers **below are stale in places** —
+> trust `handoff/` over this file where they disagree.
 
 ---
 
@@ -37,7 +68,7 @@ over the Kali WSL key.
 
 | # | Ticket | Status |
 |---|---|---|
-| 01 | repo + binaries + provenance | ✅ done (942ff3e) |
+| 01 | repo + binaries + provenance | ✅ done (942ff3e) — checkboxes now ticked |
 | 02 | installer core | ✅ done (942ff3e) |
 | 03 | configuration generation | ✅ done (adb050b) |
 | 04 | startup tasks | ✅ done (887db72) |
@@ -181,9 +212,11 @@ address a monitor by **name** are the reliable ones; index-based addressing
 Two independent layers; nothing is verified by eye.
 
 **Layer 1 — static, on the dev machine (no Sandbox):**
-- `tests/ticket05-06-07.tests.ps1` — 61 assertions, exit 0
+- `tests/ticket05-06-07.tests.ps1` — **65 assertions, 0 failures, exit 0**
+  (was 61/1/exit 1 — the stale assertion was fixed in commit `a72f57c`)
 - `tests/ticket08-ahk.tests.ps1` — 17 assertions, exit 0, sandbox copy
-- `tests/ticket-monitor.tests.ps1` — 12 assertions, exit 0 (new this session)
+- `tests/ticket-monitor.tests.ps1` — 12 assertions, exit 0
+- PS parse sweep — **31 shipped `.ps1`**, 0 failures under **both** PS 5.1 and PS 7
 
 **Layer 2 — the Sandbox suite (real install on a clean machine):**
 `tests/sandbox-test-suite.ps1`, including `T03f.1–T03f.2` (the repaired whkdrc
@@ -207,6 +240,9 @@ launching the Sandbox.
 
 ## 9. Where to start next
 
+0. **Read `handoff/` first** — especially `komorebi-1click-knowledges.md`. It lists
+   the traps (whkd pairing, monitor geometry, the watchdog-freeze pattern, PATH
+   capture, elevation) that this document only summarises.
 1. **Ticket 09** — the EXE wrapper. Read
    `~/projects/komorebi-1click/.scratch/komorebi-1click-installer/issues/09-exe-wrapper.md`.
    A thin single-file C# EXE built with `csc.exe` (.NET Framework) that locates
