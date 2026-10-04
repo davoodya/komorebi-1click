@@ -29,7 +29,7 @@ Start-Sleep -Seconds 1
 if (Test-Path $yasb) {
     Write-Host "[restart-all] starting yasb ..." -ForegroundColor Cyan
     # PATH is read at launch. Rebuild it from the registry so the komorebi
-    # event listener can resolve komorebic.exe (see 7-YASB-RESTART.ps1).
+    # event listener can resolve komorebic.exe (see the -DiagnoseOnly switch in restart-yasb.ps1).
     $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $user    = [Environment]::GetEnvironmentVariable('Path', 'User')
     if ($machine) { $env:Path = "$machine;$user" }

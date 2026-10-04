@@ -61,7 +61,7 @@
 | `B-RESTART-KOMOREBI.bat` | **فقط komorebi** — برای اعمال `komorebi.json` تغییر یافته. watchdog-safe. موتور: `restart-komorebi.ps1`. |
 | `C-RESTART-WHKD.bat` | **فقط whkd** — برای اعمال `whkdrc` تغییر یافته. watchdog-safe. موتور: `restart-whkd.ps1`. |
 | `D-RESTART-YASB.bat` | **فقط yasb** — برای اعمال `config.yaml` تغییر یافته. PATH را از registry بازسازی می‌کند (تا event listener بتواند `komorebic.exe` را پیدا کند) و verdict اتصال را از log چاپ می‌کند. موتور: `restart-yasb.ps1`. |
-| `7-YASB-RESTART.ps1` | نسخه‌ی کامل‌ترِ D: علاوه بر restart، وضعیت PATH و autostart registration yasb را هم تشخیص می‌کند. پرچم `-DiagnoseOnly` فقط تشخیص می‌دهد و restart نمی‌کند. |
+| ~~`7-YASB-RESTART.ps1`~~ | **REMOVED — merged into `restart-yasb.ps1`.** Its diagnosis half is now the `-DiagnoseOnly` switch on `restart-yasb.ps1` (prints the registry-vs-inherited PATH status and how YASB is registered at logon, then exits without restarting). Use `D-RESTART-YASB.bat` to restart, or `powershell -File restart-yasb.ps1 -DiagnoseOnly` to diagnose only. |
 
 > **چرا restart کامل yasb به‌جای hot-reload؟** YASB در زمان launch، PATH خود را می‌خواند. اگر آن PATH قدیمی‌تر از نصب komorebi باشد، `komorebic.exe` پیدا نمی‌شود و widgetهای komorebi می‌میرند. علاوه بر این `watch_config` ویرایش‌های انجام‌شده از WSL (drvfs) را نمی‌بیند.
 

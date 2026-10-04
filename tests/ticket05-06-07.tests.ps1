@@ -127,8 +127,19 @@ foreach ($pair in @(
 }
 
 Section 'T06.3 — the whkdrc companion scripts resolve their binaries portably'
+# The invariant here is NOT "this script calls Resolve-WhkdExe". It is that the
+# script never launches whkd.exe by hand: whkd must only ever be spawned by
+# `komorebic start --whkd`, or it is alive-but-unpaired and silently drops every
+# hotkey (LGUG2Z/komorebi#956 — see docs/POSTMORTEM-20261004-whkd-pairing.md).
+# Commit 370fd41 therefore REMOVED Resolve-WhkdExe from this script on purpose;
+# an assertion pinning that helper name was testing an implementation detail and
+# had to go stale. These assertions pin the behaviour instead.
 $t = Get-Content -LiteralPath (Join-Path $scripts 'restart-whkd.ps1') -Raw
-Assert 'restart-whkd.ps1 resolves whkd through common.ps1' ($t -match 'Resolve-WhkdExe')
+Assert 'restart-whkd.ps1 resolves komorebic through common.ps1' ($t -match 'Resolve-KomorebicExe')
+Assert 'restart-whkd.ps1 never launches whkd.exe directly' ($t -notmatch 'Start-Process[^\r\n]*\$whkd')
+Assert 'restart-whkd.ps1 stops the pair via komorebic stop --whkd' ($t -match 'stop --whkd')
+Assert 'restart-whkd.ps1 starts komorebi via the elevated logon task' ($t -match "Start-ScheduledTask -TaskName 'Komorebi'")
+Assert 'restart-whkd.ps1 verifies the pairing after restarting' ($t -match 'Test-WhkdPaired')
 $t = Get-Content -LiteralPath (Join-Path $scripts 'toggle-transparency.ps1') -Raw
 Assert 'toggle-transparency.ps1 parameterises the percent' ($t -match '\[int\]\s*\$Percent|\$Percent\s*=\s*85')
 $t = Get-Content -LiteralPath (Join-Path $scripts 'safe-restart.ps1') -Raw

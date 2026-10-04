@@ -49,7 +49,7 @@ if ($Components -ne 'yasb') {
 if ($Components -ne 'komorebi-whkd') {
     Start-IfNotRunning 'yasb' {
         # PATH is read at launch. Rebuild it from the registry so the komorebi
-        # event listener can resolve komorebic.exe (see 7-YASB-RESTART.ps1).
+        # event listener can resolve komorebic.exe (see the -DiagnoseOnly switch in restart-yasb.ps1).
         if ($yasb) {
             $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
             $user    = [Environment]::GetEnvironmentVariable('Path', 'User')

@@ -5,7 +5,7 @@ The test procedure is defined by **ADR-0008** and lives in one place:
 | Artifact | Purpose |
 |---|---|
 | `tests/sandbox-test-suite.ps1` | The single authoritative suite — every assertion for tickets 01, 02, 03 and 04 |
-| `sandbox.wsb` | Windows Sandbox config: maps the repo read-only as `C:\Repo`, disables networking, runs the suite at logon |
+| `tests/sandbox.wsb` | Windows Sandbox config: maps the repo read-only as `C:\Repo`, disables networking, runs the suite at logon |
 | `docs/sandbox-test-harness.ps1` | Optional host-side launcher: sanity-checks the repo, then opens `sandbox.wsb` |
 | `docs/adr/0008-testing-strategy-revised.md` | Why tests run in the Sandbox and never on the production reference machine |
 
