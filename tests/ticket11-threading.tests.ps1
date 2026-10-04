@@ -398,7 +398,12 @@ if (Test-Path $mwCs) {
 Write-Host ''
 Write-Host '[8] Build + runtime evidence' -ForegroundColor Yellow
 
-$exe = Join-Path $Src 'bin\Release\net8.0-windows\KomorebiDashboard.exe'
+# Resolved, not hardcoded: ticket 13 added RuntimeIdentifier=win-x64, which
+# moves `dotnet build` output into a win-x64\ subfolder. See
+# tests/dashboard-paths.ps1 for why guessing a path here keeps breaking.
+. (Join-Path $PSScriptRoot 'dashboard-paths.ps1')
+$exe = Resolve-DashboardExe -Src $Src
+if (-not $exe) { $exe = Join-Path $Src 'bin\Release\net8.0-windows\KomorebiDashboard.exe' }
 $built = $false
 
 if (-not $SkipBuild) {

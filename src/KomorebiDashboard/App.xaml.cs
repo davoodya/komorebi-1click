@@ -104,7 +104,7 @@ public partial class App : Application
             return 0;
         }
 
-        var service = new ScriptService(ResolveScriptsDirectory());
+        var service = new ScriptService(ScriptsLocator.Resolve());
 
         // Elevation gate for the CLI twin (ADR-0012). Checked BEFORE the script
         // is launched, and the refusal is loud: a non-zero exit plus a message
@@ -148,30 +148,5 @@ public partial class App : Application
 
         Console.Error.WriteLine(result.Summary);
         return result.ExitCode;
-    }
-
-    /// <summary>
-    /// Mirrors MainWindow's probing so the CLI twin finds the scripts in both the
-    /// development and the shipped layout.
-    /// </summary>
-    private static string ResolveScriptsDirectory()
-    {
-        var candidates = new[]
-        {
-            Path.Combine(AppContext.BaseDirectory, "scripts"),
-            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "scripts"),
-            Path.Combine(AppContext.BaseDirectory, "..", "scripts"),
-        };
-
-        foreach (var candidate in candidates)
-        {
-            var full = Path.GetFullPath(candidate);
-            if (Directory.Exists(full) && File.Exists(Path.Combine(full, "kill-all.ps1")))
-            {
-                return full;
-            }
-        }
-
-        return Path.Combine(AppContext.BaseDirectory, "scripts");
     }
 }

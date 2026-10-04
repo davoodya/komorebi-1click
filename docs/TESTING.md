@@ -106,6 +106,37 @@ must run in the Sandbox.
 The Sandbox run itself is the single outstanding verification step for all four tickets.
 It requires no decisions — only launching `sandbox.wsb` and reading the printed result.
 
+## DEFERRED TESTS — to run when ticket implementation is finished
+
+Registered 2026-10-05 at Davood's instruction, so they are not lost between sessions. Neither
+can be proven on the development machine: both need an environment this machine is not.
+**Do not attempt either one until the tickets are implemented.**
+
+### D-T1 — run with no .NET 8 runtime installed  (blocks on: ticket 13)
+
+| | |
+|---|---|
+| **What** | Launch the published self-contained `KomorebiDashboard.exe` on a machine with **no** .NET 8 Desktop Runtime, and confirm it opens its main window and that `--help` and a read-only verb work. |
+| **Why deferred** | This machine has the .NET 8 SDK, so a framework-dependent run would also work and prove nothing. The whole point of ticket 13's `SelfContained` flag is untested until the runtime is absent. |
+| **How** | Windows Sandbox (`sandbox.wsb`, networking disabled) or any VM without the runtime. The Sandbox already maps the repo read-only as `C:\Repo`. |
+| **Pass criteria** | Window handle non-zero; `--help` exits 0; the app does **not** print "You must install .NET" or `0x80008096`. |
+| **Fails if** | The app depends on a machine-installed runtime, or a satellite/native DLL was left beside the EXE and is missing. |
+| **Blocks** | Ticket 13 cannot be called done. ADR-0015 lists this as required Sandbox verification. |
+
+### D-T2 — observe the real UAC prompt  (blocks on: ticket 12, verifiable in ticket 14)
+
+| | |
+|---|---|
+| **What** | On a **UAC-enabled** machine, trigger an admin verb (`kill-komorebi`) from the unelevated Dashboard and confirm the three-button dialog appears, `Rerun as Administrator` raises a genuine UAC prompt, and the relaunched instance reports `IsElevated=True`. Then confirm `Cancel` leaves the system untouched. |
+| **Why deferred** | This machine has **UAC disabled** (recorded in ADR-0012 Consequences), so the prompt cannot appear at all. What *is* proven here is the gate's decision and exit code, not the OS prompt. |
+| **How** | Any UAC-enabled target, or enable UAC on a disposable VM. Test with the dashboard **not** started as administrator, or the gate is bypassed. |
+| **Pass criteria** | Prompt appears once and is attributable to our relaunch; the elevated instance reports `IsElevated=True`; `Cancel` and `OK` both change nothing. |
+| **Fails if** | Two instances linger, the relaunch silently fails, or elevation is requested for a non-admin verb. |
+| **Note** | ADR-0012 explicitly accepts the two-instance overlap (the unelevated one exits immediately after spawning). Confirm that assumption here rather than assuming it. |
+
+Both rows above stay in this file until real evidence replaces them. Neither may be marked
+passed on the strength of the development-machine evidence described elsewhere in this document.
+
 ## The Dashboard suites are different in kind
 
 Tickets 09–12 do **not** belong in `sandbox-test-suite.ps1`. They need a Windows desktop with

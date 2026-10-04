@@ -21,7 +21,7 @@ public partial class MainWindow : Window
         // The scripts live in <repo>\scripts during development and beside the
         // executable in a shipped install. Probe both so the app works from
         // either layout instead of assuming one.
-        var service = new ScriptService(ResolveScriptsDirectory());
+        var service = new ScriptService(ScriptsLocator.Resolve());
 
         Attach(nameof(KillStartView),  new KillStartViewModel(service));
         Attach(nameof(RestartView),    new RestartViewModel(service));
@@ -75,29 +75,5 @@ public partial class MainWindow : Window
                 : "Dark theme";
             button.ToolTip = $"Switch to the {(applied == Wpf.Ui.Appearance.ApplicationTheme.Dark ? "Light" : "Dark")} Fluent theme";
         }
-    }
-
-    private static string ResolveScriptsDirectory()
-    {
-        var candidates = new[]
-        {
-            Path.Combine(AppContext.BaseDirectory, "scripts"),
-            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "scripts"),
-            Path.Combine(AppContext.BaseDirectory, "..", "scripts"),
-        };
-
-        foreach (var candidate in candidates)
-        {
-            var full = Path.GetFullPath(candidate);
-            if (Directory.Exists(full) && File.Exists(Path.Combine(full, "kill-all.ps1")))
-            {
-                return full;
-            }
-        }
-
-        // Nothing found. ScriptService reports a missing script per verb with a
-        // clear message rather than the app refusing to start, so a misplaced
-        // install stays diagnosable from the UI itself.
-        return Path.Combine(AppContext.BaseDirectory, "scripts");
     }
 }

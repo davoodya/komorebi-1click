@@ -27,7 +27,12 @@ $ErrorActionPreference = 'Stop'
 $repo    = 'H:\Repo\komorebi-1click'
 $projDir = Join-Path $repo 'src\KomorebiDashboard'
 $probeDir = Join-Path $repo 'tests\.build\ticket12-probe'
-$exePath = Join-Path $projDir 'bin\Release\net8.0-windows\KomorebiDashboard.exe'
+# Resolved, not hardcoded: ticket 13's RuntimeIdentifier moves the build
+# output into a win-x64\ subfolder. This suite THROWS when the EXE is
+# absent, so the resolver matters more here than anywhere else.
+. (Join-Path $PSScriptRoot 'dashboard-paths.ps1')
+$exePath = Resolve-DashboardExe -Src $projDir
+if (-not $exePath) { $exePath = Join-Path $projDir 'bin\Release\net8.0-windows\KomorebiDashboard.exe' }
 
 $script:Pass = 0
 $script:Fail = 0
@@ -236,6 +241,21 @@ namespace Ticket12Probe
     <Nullable>enable</Nullable>
     <AssemblyName>Ticket12Probe</AssemblyName>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!--
+      SelfContained + RuntimeIdentifier are NOT cosmetic here. Ticket 13 made the
+      dashboard self-contained, and a self-contained exe cannot be referenced by
+      a framework-dependent one:
+
+        error NETSDK1151: The referenced project ... is a self-contained
+        executable. A self-contained executable cannot be referenced by a
+        non self-contained executable.
+
+      So the probe must match, or it cannot build at all. This is the probe
+      being forced to track a product decision - worth knowing, because it means
+      the two projects are now coupled by the publish mode.
+    -->
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Probe.cs" />
@@ -257,7 +277,12 @@ if ($buildExit -ne 0) {
 }
 Ok 'probe builds against the real dashboard'
 
-$probeExe = Join-Path $probeDir 'bin\Release\net8.0-windows\Ticket12Probe.exe'
+# Resolved by glob, not by a fixed path: the probe now carries
+# RuntimeIdentifier=win-x64 (see the csproj note above), so its output lands in
+# a win-x64\ subfolder exactly as the dashboard's does.
+$probeExe = @(Get-ChildItem (Join-Path $probeDir 'bin\Release') -Recurse `
+                            -Filter 'Ticket12Probe.exe' -File -EA SilentlyContinue)
+$probeExe = if ($probeExe.Count -gt 0) { $probeExe[0].FullName } else { '' }
 if (-not (Test-Path $probeExe)) { No "probe exe exists ($probeExe)" } else { Ok 'probe exe exists' }
 
 Write-Host ''
