@@ -93,6 +93,7 @@ try {
         Say "  watchdog frozen for the restart window" 'DarkGray'
     }
 } catch { Say "  could not touch the watchdog task: $($_.Exception.Message)" 'Yellow' }
+try {
 
 # ── 3. restart via the mutex-protected service script ────────────────────
 # Run it IN THIS PROCESS. Spawning a nested powershell.exe makes the child
@@ -177,3 +178,15 @@ try {
 
 Say ''
 Say '  done. Workspaces are per-monitor: alt+N acts on the CURRENT monitor.' 'Cyan'
+
+# -- crash-safe watchdog restore (defect D4) ------------------------------
+# The explicit restore earlier in this script only runs on the happy path.
+# This `finally` also runs when a step throws, when the script exits early and
+# on Ctrl+C, so a failed or interrupted restart can never leave the watchdog
+# disabled. Komorebi + whkd must stay supervised at all times; only kill-all
+# is allowed to stop them.
+} finally {
+    if ($watchWasEnabled) {
+        try { Enable-ScheduledTask -TaskName $WatchTask | Out-Null } catch { }
+    }
+}
