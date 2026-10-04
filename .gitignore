@@ -4,6 +4,12 @@ releases/*.exe
 releases/*.msi
 releases/*.zip
 
+# The installer wrapper EXE is likewise a build artifact: scripts/build-exe.ps1
+# rebuilds it from scripts/komorebi-install.cs with csc.exe on any dev machine
+# (ADR-0004). The SOURCE is tracked; the binary is not.
+komorebi-1click-install.exe
+install/
+
 # Build/test scratch that must never be committed.
 [Ss]cratch/
 [Tt]emp/

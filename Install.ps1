@@ -34,7 +34,65 @@ $ProgressPreference = 'SilentlyContinue'
 
 # RepoRoot is the directory that contains this script. Never use the current
 # working directory: a user double-clicking the wrapper starts in System32.
-$RepoRoot = $PSScriptRoot
+#
+# `$PSScriptRoot` is correct for the two on-disk entry points (the EXE and a
+# direct `.\Install.ps1`), but it is EMPTY under `irm ... | iex`, because that
+# form runs the script from memory with no file behind it. Taking RepoRoot
+# straight from $PSScriptRoot there resolved to nothing and the installer died
+# on the very first Join-Path with a confusing error. So the in-memory case is
+# detected explicitly and handled by fetching the repository archive, then
+# re-executing the real Install.ps1 from disk. That keeps every decision in
+# exactly one file: all three entry points converge on this same code path.
+if ($PSScriptRoot) {
+    $RepoRoot = $PSScriptRoot
+} else {
+    # `irm | iex` path. Two overrides exist, in priority order:
+    #   $env:KOMOREBI_1CLICK_ROOT  an already-cloned local repository
+    #   $env:KOMOREBI_1CLICK_URL   the base URL the script was fetched from
+    $bootstrapRoot = $env:KOMOREBI_1CLICK_ROOT
+    if (-not $bootstrapRoot) {
+        $baseUrl = $env:KOMOREBI_1CLICK_URL
+        if (-not $baseUrl) { $baseUrl = 'https://github.com/davoodya/komorebi-1click/releases/latest' }
+
+        # Keep the repository beside the user's other local installs rather than
+        # in TEMP, so a re-run can reuse it and the installed system stays
+        # inspectable afterwards.
+        $bootstrapRoot = Join-Path $env:LOCALAPPDATA 'komorebi-1click'
+        if (-not (Test-Path -LiteralPath (Join-Path $bootstrapRoot 'scripts\Install-Common.ps1'))) {
+            $zip = Join-Path $env:TEMP 'komorebi-1click.zip'
+            $archive = "$baseUrl/download/komorebi-1click.zip"
+            Write-Host "[bootstrap] fetching $archive" -ForegroundColor Cyan
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Invoke-WebRequest -Uri $archive -OutFile $zip -UseBasicParsing
+
+            $staging = Join-Path $env:TEMP ('komorebi-1click-extract-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+            Expand-Archive -LiteralPath $zip -DestinationPath $staging -Force
+            Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+
+            # A GitHub source/asset ZIP wraps everything in one top-level folder.
+            $extracted = Get-ChildItem -LiteralPath $staging -Directory | Select-Object -First 1
+            $inner = if ($extracted) { $extracted.FullName } else { $staging }
+
+            if (Test-Path -LiteralPath $bootstrapRoot) {
+                Remove-Item -LiteralPath $bootstrapRoot -Recurse -Force
+            }
+            New-Item -ItemType Directory -Path (Split-Path $bootstrapRoot -Parent) -Force | Out-Null
+            Move-Item -LiteralPath $inner -Destination $bootstrapRoot
+            Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    $RepoRoot = $bootstrapRoot
+
+    # Re-exec the on-disk installer so the real work runs from a real file with
+    # $PSScriptRoot set. The bootstrap itself only ever gets to run this once.
+    $realInstaller = Join-Path $RepoRoot 'Install.ps1'
+    if (-not (Test-Path -LiteralPath $realInstaller)) {
+        throw "bootstrap failed: no Install.ps1 under '$RepoRoot'."
+    }
+    Write-Host "[bootstrap] handing over to $realInstaller" -ForegroundColor Cyan
+    & (Get-Process -Id $PID).Path -NoProfile -ExecutionPolicy Bypass -File $realInstaller @PSBoundParameters
+    exit $LASTEXITCODE
+}
 
 . (Join-Path $RepoRoot 'scripts\Install-Common.ps1')
 
