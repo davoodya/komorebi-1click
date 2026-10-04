@@ -70,6 +70,12 @@ public partial class App : Application
         }
 
         base.OnStartup(e);
+
+        // Theme FIRST, then show the window. Applying it after Show() would
+        // make the user watch the default light palette repaint into dark —
+        // a priority-2 (smoothness) regression caused by priority-4 work.
+        ThemeService.ApplyDefault();
+
         MainWindow = new MainWindow();
         MainWindow.Show();
 
@@ -99,6 +105,17 @@ public partial class App : Application
         }
 
         var service = new ScriptService(ResolveScriptsDirectory());
+
+        // Elevation gate for the CLI twin (ADR-0012). Checked BEFORE the script
+        // is launched, and the refusal is loud: a non-zero exit plus a message
+        // naming the verb. A silent no-op on an administrative verb would be a
+        // data-loss-class surprise — the user would read "done" while nothing
+        // happened.
+        if (!ElevationService.CanRun(parsed.Verb!))
+        {
+            Console.Error.WriteLine(ElevationService.RefusalMessage(parsed.Verb!));
+            return ElevationService.InsufficientPrivilegeExitCode;
+        }
 
         // -TimeoutSeconds belongs to the CALLER, not to the script: it bounds
         // this invocation so a hung script cannot hang the shell that ran it.

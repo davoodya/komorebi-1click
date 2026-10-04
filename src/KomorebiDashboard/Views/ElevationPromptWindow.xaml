@@ -1,0 +1,48 @@
+<Window x:Class="KomorebiDashboard.Views.ElevationPromptWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Rerun as Administrator"
+        SizeToContent="Height"
+        Width="520"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner">
+  <!--
+    ADR-0012 requires this exact title and exactly three buttons:
+    OK | Rerun as Administrator | Cancel.
+
+    The window is deliberately plain: it must render identically in either
+    theme, and a themed dialog would itself be a theming surface to keep in
+    sync. Buttons are laid out in a row and wrap, because the long button label
+    plus the message must stay readable at 100% and at 200% DPI.
+  -->
+  <Grid Margin="20">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <TextBlock Grid.Row="0"
+               Text="Some features need Administrator rights"
+               FontSize="16" FontWeight="SemiBold"
+               Margin="0,0,0,10" TextWrapping="Wrap" />
+
+    <ScrollViewer Grid.Row="1" MaxHeight="260" VerticalScrollBarVisibility="Auto">
+      <TextBlock x:Name="MessageText" TextWrapping="Wrap" FontSize="13" />
+    </ScrollViewer>
+
+    <WrapPanel Grid.Row="2" Orientation="Horizontal"
+               HorizontalAlignment="Right" Margin="0,18,0,0">
+      <Button x:Name="OkButton" Content="OK" IsDefault="True"
+              MinWidth="90" Padding="14,6" Margin="0,0,8,0"
+              Click="OnDismiss" />
+      <Button x:Name="CancelButton" Content="Cancel" IsCancel="True"
+              MinWidth="90" Padding="14,6" Margin="0,0,8,0"
+              Click="OnDismiss" />
+      <Button x:Name="RerunButton" Content="Rerun as Administrator"
+              MinWidth="190" Padding="14,6"
+              IsDefault="False"
+              Click="OnRerun" />
+    </WrapPanel>
+  </Grid>
+</Window>

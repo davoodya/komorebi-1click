@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using KomorebiDashboard.Models;
 using KomorebiDashboard.Services;
+using KomorebiDashboard.Views;
 
 namespace KomorebiDashboard.ViewModels;
 
@@ -101,6 +102,18 @@ public abstract partial class TabViewModelBase : ObservableObject
     {
         var def = VerbRegistry.Find(verb);
         if (def is null) { Status = $"Unknown verb '{verb}'."; return; }
+
+        // Elevation gate (ADR-0012), BEFORE anything is started. Per-operation,
+        // not global: read-only and per-user verbs are unaffected.
+        if (!ElevationService.CanRun(def))
+        {
+            if (!ElevationPrompt.TryPrompt(ElevationService.BuildElevationPrompt()))
+            {
+                Status = $"{verb} needs Administrator. Nothing was changed.";
+                Output = ElevationService.RefusalMessage(def);
+                return;
+            }
+        }
 
         // A fresh CTS per run: reusing one means a second run inherits the first
         // run's cancelled token and can never start.

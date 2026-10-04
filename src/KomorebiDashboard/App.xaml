@@ -1,8 +1,41 @@
 <Application x:Class="KomorebiDashboard.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="clr-namespace:Wpf.Ui.Markup;assembly=Wpf.Ui">
   <!--
-    No StartupUri on purpose: App.Main decides between the GUI and the CLI twin
-    from the command line, so the window cannot be started from markup.
+    No StartupUri on purpose: App.OnStartup decides between the GUI and the CLI
+    twin from the command line, so the window cannot be started from markup.
+
+    The WPF-UI dictionaries are merged HERE, once, at the Application level.
+    They are the Fluent theme resources: without this merge every control falls
+    back to stock WPF chrome and there is no Dark/Light palette to switch
+    between. Merging at Application scope (rather than per window) is what lets
+    ThemeService swap the theme without recreating any window.
+
+    Theme IS NOT PINNED HERE, and Source IS NOT WRITTEN AT ALL. Both were tried
+    and both are wrong:
+
+      * Source="...Themes/Light.xaml" crashed the app on startup with
+        XamlParseException -> IOException: Cannot locate resource
+        'themes/light.xaml'. The real location is the compiled resource
+        Wpf.Ui.g.resources -> resources/theme/light.baml.
+      * Pinning Theme="Light" in markup would freeze the palette and make
+        ThemeService.Apply() fight the declaratively-set value.
+
+    ThemesDictionary with no Theme set resolves the system theme itself
+    (internal SetSourceBasedOnSelectedTheme), and ThemeService.Apply() overrides
+    it at runtime. The xaml namespace is written clr-namespace style rather than
+    as http://schemas.repo.co/wpfui/2022/xaml: the XmlnsDefinition attribute IS
+    present on Wpf.Ui 4.3.0, but the WPF markup compiler did not honour it
+    (MC3074 "tag 'ThemesDictionary' does not exist in XML namespace") even after
+    the URI was corrected. clr-namespace is resolved by the compiler directly
+    and does not depend on that mapping.
   -->
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ui:ThemesDictionary />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
 </Application>

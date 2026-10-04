@@ -98,8 +98,35 @@ foreach ($tier in 'Models','Services','ViewModels','Views') {
     Assert "tier '$tier' exists" (Test-Path $d) $d
 }
 
+# Tab views are the ones MainWindow actually hosts inside its <TabControl>.
+# Counting every *.xaml in Views/ breaks the moment a non-tab window is added:
+# ticket 12 added ElevationPromptWindow.xaml, a modal dialog that is
+# emphatically NOT a seventh tab. The tab set is derived from MainWindow.xaml
+# so this stays a real structural check rather than a file count that has to
+# be edited each time a dialog appears.
 $views = @(Get-ChildItem (Join-Path $Src 'Views') -Filter '*.xaml' -EA SilentlyContinue)
-Assert 'six tab views'                 ($views.Count -eq 6) "found $($views.Count): $(($views.Name) -join ', ')"
+$mainXaml = Join-Path $Src 'MainWindow.xaml'
+$tabViews = @()
+if (Test-Path $mainXaml) {
+    $mainText = Get-Content $mainXaml -Raw
+    $matches = [regex]::Matches($mainText, '<TabItem[^>]*>\s*<views:(\w+)')
+    if ($matches.Count -eq 0) {
+        $matches = [regex]::Matches($mainText, 'views:(\w+)\s*/>')
+    }
+    $tabViews = @($matches | ForEach-Object { $_.Groups[1].Value })
+}
+
+Assert 'six tab views'                 ($tabViews.Count -eq 6) "found $($tabViews.Count): $($tabViews -join ', ')"
+$missingTabViews = @($tabViews | Where-Object { -not (Test-Path (Join-Path $Src "Views\$_.xaml")) })
+Assert 'every tab view has a file on disk' `
+           ($missingTabViews.Count -eq 0) `
+           "missing: $($missingTabViews -join ', ')"
+
+# A dialog in Views/ is fine and expected; it just must not be counted as a tab.
+$extraViews = @($views | Where-Object { $tabViews -notcontains $_.BaseName })
+if ($extraViews.Count -gt 0) {
+    Write-Host ("        (non-tab windows also present: " + (($extraViews.BaseName) -join ', ') + ")") -ForegroundColor DarkGray
+}
 Assert 'six view models'               (@(Get-ChildItem (Join-Path $Src 'ViewModels') -Filter '*ViewModel.cs' -EA SilentlyContinue).Count -ge 6)
 
 # ADR-0009 tab names, in order. Reused later as $TabNames.

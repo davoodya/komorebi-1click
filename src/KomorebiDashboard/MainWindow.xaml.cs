@@ -55,6 +55,28 @@ public partial class MainWindow : Window
         view.DataContext = viewModel;
     }
 
+    /// <summary>
+    /// Switch between the Dark and Light Fluent themes (ticket 12).
+    ///
+    /// The switch goes through <see cref="ThemeService"/>, which applies it
+    /// immediately to the live window — there is no restart and no flicker,
+    /// because the theme resources are merged at Application scope.
+    /// </summary>
+    private void OnToggleTheme(object sender, RoutedEventArgs e)
+    {
+        var applied = ThemeService.Toggle();
+
+        // The label reports what is now in force, so the user never has to
+        // guess which way a toggle went.
+        if (ThemeToggle is { } button)
+        {
+            button.Content = applied == Wpf.Ui.Appearance.ApplicationTheme.Dark
+                ? "Light theme"
+                : "Dark theme";
+            button.ToolTip = $"Switch to the {(applied == Wpf.Ui.Appearance.ApplicationTheme.Dark ? "Light" : "Dark")} Fluent theme";
+        }
+    }
+
     private static string ResolveScriptsDirectory()
     {
         var candidates = new[]
