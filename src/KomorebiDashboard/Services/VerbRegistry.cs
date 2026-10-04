@@ -63,7 +63,13 @@ public static class VerbRegistry
         new("recover-monitors",  "recover-monitors.ps1",  "",              false, "After plug/unplug: restore orphans and retile", Tabs.Debugging, "Recover Monitors"),
         new("display-diag",      "display-diag.ps1",      "",              false, "Compare monitor geometry across three sources", Tabs.Debugging, "Display Diagnostics", IsReadOnly: true),
         new("reset-workspaces",  "reset-workspaces.ps1",  "",              false, "Renumber workspaces 1..9 on every monitor",     Tabs.Debugging,  "Reset Workspaces"),
-        new("repair-whkdrc",     "repair-whkdrc.ps1",     "",              false, "Rewrite whkdrc into the form whkd accepts",     Tabs.Debugging,  "Repair whkdrc"),
+        new("repair-whkdrc",     "repair-whkdrc.ps1",     "",              false, "Rewrite whkdrc into the form whkd accepts",     Tabs.Debugging, "Repair whkdrc"),
+
+               // Deliberately chatty and long-running (ticket 11). It touches nothing
+               // on the system — pure console output — so it is safe to run anywhere,
+               // including on a live box, and it is what proves the UI stays
+               // responsive while output streams.
+               new("demo-stream",       "demo-stream.ps1",       "[options]",     false, "Chatty output stream: proves no-lag streaming", Tabs.Debugging, "Demo Stream",   IsReadOnly: true),
 
         // ---- AutoHotkey ---------------------------------------------------
         new("ahk",               "ahk-toggle.ps1",        "on|off",        false, "Turn all configured AHK scripts on or off",    Tabs.AutoHotkey, "AHK All"),

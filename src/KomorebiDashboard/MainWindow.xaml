@@ -9,13 +9,20 @@
     Hosts the six tab Views. All it does is place them; every button inside them
     is generated from VerbRegistry, so this window needs no per-verb wiring
     either (ADR-0009 / ADR-0013).
+
+    x:Name IS LOAD-BEARING. MainWindow's constructor attaches each View's
+    DataContext via FindName, and FindName only finds NAMED elements in the
+    namescope. Without these names every FindName returns null and the app dies
+    on startup with a NullReferenceException before a window ever appears
+    (defect D18). The static suites could not catch it because nothing in them
+    launched the app; tests/ticket11-threading.tests.ps1 now really launches it.
   -->
   <TabControl Margin="8">
-    <TabItem Header="Kill and Start"><views:KillStartView /></TabItem>
-    <TabItem Header="Restart and Reloading"><views:RestartView /></TabItem>
-    <TabItem Header="Settings"><views:SettingsView /></TabItem>
-    <TabItem Header="AutoHotkey Scripts"><views:AutoHotkeyView /></TabItem>
-    <TabItem Header="Debugging"><views:DebuggingView /></TabItem>
-    <TabItem Header="Uninstall and Cleanup"><views:UninstallView /></TabItem>
+    <TabItem Header="Kill and Start"><views:KillStartView x:Name="KillStartView" /></TabItem>
+    <TabItem Header="Restart and Reloading"><views:RestartView x:Name="RestartView" /></TabItem>
+    <TabItem Header="Settings"><views:SettingsView x:Name="SettingsView" /></TabItem>
+    <TabItem Header="AutoHotkey Scripts"><views:AutoHotkeyView x:Name="AutoHotkeyView" /></TabItem>
+    <TabItem Header="Debugging"><views:DebuggingView x:Name="DebuggingView" /></TabItem>
+    <TabItem Header="Uninstall and Cleanup"><views:UninstallView x:Name="UninstallView" /></TabItem>
   </TabControl>
 </Window>

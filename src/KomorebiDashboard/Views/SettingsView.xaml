@@ -40,10 +40,15 @@
       </ItemsControl.ItemTemplate>
     </ItemsControl>
 
-    <!-- Argument box, used by the verbs that take one. -->
+    <!-- Argument box + Cancel. Cancel binds to the ViewModel's CancelCommand
+         and nothing else: it stays enabled only while a script is running,
+         which is what CancelCanExecute on the ViewModel decides. -->
     <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,10">
       <TextBlock Text="Arguments:" VerticalAlignment="Center" Margin="0,0,8,0" />
       <TextBox Text="{Binding Argument, UpdateSourceTrigger=PropertyChanged}" Width="320" />
+      <Button Content="Cancel" Command="{Binding CancelCommand}"
+              Padding="14,4" Margin="12,0,0,0" MinWidth="90"
+              ToolTip="Kill the running script and its process tree" />
     </StackPanel>
 
     <!-- Live script output. -->

@@ -23,12 +23,36 @@ public partial class MainWindow : Window
         // either layout instead of assuming one.
         var service = new ScriptService(ResolveScriptsDirectory());
 
-        ((KillStartView)  FindName(nameof(KillStartView))!).DataContext  = new KillStartViewModel(service);
-        ((RestartView)    FindName(nameof(RestartView))!).DataContext    = new RestartViewModel(service);
-        ((SettingsView)   FindName(nameof(SettingsView))!).DataContext   = new SettingsViewModel(service);
-        ((AutoHotkeyView) FindName(nameof(AutoHotkeyView))!).DataContext = new AutoHotkeyViewModel(service);
-        ((DebuggingView)  FindName(nameof(DebuggingView))!).DataContext  = new DebuggingViewModel(service);
-        ((UninstallView)  FindName(nameof(UninstallView))!).DataContext  = new UninstallViewModel(service);
+        Attach(nameof(KillStartView),  new KillStartViewModel(service));
+        Attach(nameof(RestartView),    new RestartViewModel(service));
+        Attach(nameof(SettingsView),   new SettingsViewModel(service));
+        Attach(nameof(AutoHotkeyView), new AutoHotkeyViewModel(service));
+        Attach(nameof(DebuggingView),  new DebuggingViewModel(service));
+        Attach(nameof(UninstallView),  new UninstallViewModel(service));
+    }
+
+    /// <summary>
+    /// Attach a ViewModel to its named View.
+    ///
+    /// FindName returns null for any element without an x:Name, and the
+    /// null-forgiving operator would turn that into a NullReferenceException
+    /// thrown from the constructor — which is exactly how defect D18 killed the
+    /// app on startup. Failing loudly with a message naming the missing x:Name
+    /// turns an opaque crash into an actionable one, so a View renamed without
+    /// its name updated says so instead of dying silently.
+    /// </summary>
+    /// <param name="name">The View's x:Name, which is what FindName resolves.</param>
+    /// <param name="viewModel">The ViewModel to attach to that View.</param>
+    private void Attach(string name, object viewModel)
+    {
+        if (FindName(name) is not FrameworkElement view)
+        {
+            throw new InvalidOperationException(
+                $"View '{name}' was not found. MainWindow.xaml must declare " +
+                $"x:Name=\"{name}\" on that element, or FindName cannot resolve it.");
+        }
+
+        view.DataContext = viewModel;
     }
 
     private static string ResolveScriptsDirectory()

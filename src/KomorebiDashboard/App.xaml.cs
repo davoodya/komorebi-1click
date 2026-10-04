@@ -23,6 +23,20 @@ public partial class App : Application
     private int _cliExitCode;
 
     /// <summary>
+    /// Process start time, used to report the real startup cost. ADR-0015 ranks
+    /// "maximum speed" as priority 1 and this ticket requires the figure to be
+    /// MEASURED, not assumed.
+    ///
+    /// <para>Deliberately seeded from <see cref="Process.GetCurrentProcess"/>'s
+    /// StartTime rather than from a stopwatch begun inside this class. A static
+    /// field initializer runs on first touch of App, which is AFTER the CLR has
+    /// already loaded WPF — so a stopwatch started there reports only the
+    /// remainder and prints a confident, wrong "0 ms".</para>
+    /// </summary>
+    private static readonly DateTime ProcessStartUtc =
+        System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime();
+
+    /// <summary>
     /// async void is deliberate and required here. Blocking on
     /// RunCliAsync(...).GetAwaiter().GetResult() inside OnStartup starves the WPF
     /// dispatcher: the message loop has not started yet, so a Shutdown() issued
@@ -58,6 +72,12 @@ public partial class App : Application
         base.OnStartup(e);
         MainWindow = new MainWindow();
         MainWindow.Show();
+
+        // Priority 1 is maximum speed, so the cost is reported rather than left
+        // implicit — measured from process start, so the CLR/WPF load cost is
+        // included rather than hidden.
+        var startupMs = (int)(DateTime.UtcNow - ProcessStartUtc).TotalMilliseconds;
+        Console.WriteLine($"[KomorebiDashboard] window ready in {startupMs} ms");
     }
 
     private static async Task<int> RunCliAsync(string[] args)
@@ -79,10 +99,35 @@ public partial class App : Application
         }
 
         var service = new ScriptService(ResolveScriptsDirectory());
+
+        // -TimeoutSeconds belongs to the CALLER, not to the script: it bounds
+        // this invocation so a hung script cannot hang the shell that ran it.
+        // Parsed here rather than forwarded, or the script would reject it.
+        var timeout = ScriptService.DefaultTimeout;
+        var forwarded = new List<string>(parsed.Arguments);
+        for (var i = 0; i < forwarded.Count - 1; i++)
+        {
+            if (string.Equals(forwarded[i], "-TimeoutSeconds", StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(forwarded[i + 1], out var seconds) && seconds > 0)
+                {
+                    timeout = TimeSpan.FromSeconds(seconds);
+                }
+                forwarded.RemoveRange(i, 2);
+                break;
+            }
+        }
+
+        // Ctrl+C must cancel the child rather than leave it orphaned.
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+
         var result = await service.RunAsync(
             parsed.Verb!.Verb,
-            parsed.Arguments,
-            line => Console.Out.WriteLine(line));
+            forwarded,
+            line => Console.Out.WriteLine(line),
+            cts.Token,
+            timeout);
 
         Console.Error.WriteLine(result.Summary);
         return result.ExitCode;
