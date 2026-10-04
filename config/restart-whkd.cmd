@@ -2,7 +2,7 @@
 REM ===========================================================================
 REM restart-whkd.cmd  -  restart whkd so an edited whkdrc takes effect
 REM ===========================================================================
-REM Called by the whkdrc `alt + o` hotkey. GENERATED at install time: the
+REM Called by the whkdrc `alt + shift + o` hotkey. GENERATED at install time: the
 REM __KOMOREBIC_EXE__ placeholder below is replaced with this machine's
 REM komorebic.exe path. Do not edit this copy, the installer regenerates it.
 REM

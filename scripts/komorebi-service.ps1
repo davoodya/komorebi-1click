@@ -350,9 +350,6 @@ function Start-Komorebi {
         # Resolve the repair script relative to THIS file, so it keeps working
         # no matter which folder the management scripts live in.
         $repair = Join-Path $PSScriptRoot 'repair-whkdrc.ps1'
-        if (-not (Test-Path $repair)) {
-            $repair = 'F:\Backups\Software-Backups\komorebi-whkd\managements\repair-whkdrc.ps1'
-        }
         if (Test-Path $repair) {
             $raw = Get-Content $WhkdrcPath -Raw -ErrorAction SilentlyContinue
             $needs = $false

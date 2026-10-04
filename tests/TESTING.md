@@ -96,6 +96,67 @@ must run in the Sandbox.
 | 02 — installer core | done (commit 942ff3e) | assertions defined; awaits a Sandbox run |
 | 03 — configuration generation | done (commit adb050b) | assertions defined; awaits a Sandbox run |
 | 04 — startup tasks | done (commit 887db72) | assertions defined; awaits a Sandbox run |
+| 05 — AutoHotkey integration | done | `ticket05-06-07.tests.ps1` T05.1–T05.4, 13/13 static PASS; awaits a Sandbox run |
+| 06 — management-script portability | done | `ticket05-06-07.tests.ps1` T06.1–T06.5 static PASS; awaits a Sandbox run |
+| 03-followup — dead whkdrc hotkeys | done | T03f.1–T03f.2 (in the static suite and the Sandbox suite) |
+| 07 — export / import ZIP | done | T07.1–T07.4 static PASS + a full export→import round trip verified in a sandbox profile |
 
-The Sandbox run itself is the single outstanding verification step for all four tickets.
-It requires no decisions — only launching `sandbox.wsb` and reading the printed result.
+## Tickets 05, 06 and 07 — what was built and how it is verified
+
+All three are covered by **two** independent layers, so nothing is left to a visual check.
+
+### Layer 1 — static, runs on the development machine (no Sandbox)
+
+`tests/ticket05-06-07.tests.ps1` — 61 assertions, exit 0 against the current tree:
+
+- **T05.1–T05.4 (ticket 05):** the three `.ahk` scripts ship in the repo; `AppRunner.vbs` is a
+  template carrying only the `RunHidden`/`RunNormal` helpers and the `AppRunnerEnd` marker; the
+  interpreter paths are the vendor defaults; and the *generated* VBS names every shipped script
+  with no leftover marker and no machine path. This proves the generation logic, not just that a
+  file exists.
+- **T06.1–T06.5 (ticket 06):** no management script references the source user or the `F:` backup
+  drive; each documented switch (`-Components`, `-Scope`, `-Percent`, `-ZipPath`) is *declared*,
+  *used* and backed by a `[ValidateSet]`; the companion scripts resolve their binaries through
+  `common.ps1` or the repo marker rather than hardcoded paths; the watchdog mutex and the YASB
+  registry PATH rebuild are intact; and every script parses cleanly.
+- **T03f (the whkdrc follow-up):** `alt + shift + o` is bound and `alt + o` is deliberately
+  unbound; `alt + ctrl + t` and `alt + ctrl + shift + r` are bound to the scripts the installer
+  now ships; every `.config` path the whkdrc names is a file the installer supplies; and the
+  `New-Whkdrc` rewrite is proven by running it — it emits `C:\TARGETUSER\.config\...`, never the
+  source user.
+- **T07.1–T07.4 (ticket 07):** the script ships and parses; the CLI form and the dialog form reach
+  the same code; the archive covers the full config set; compression is `System.IO.Compression`
+  with no third-party dependency; resize state is exported only when non-empty; and an import
+  always backs the live config up and stops/starts the WM around the restore.
+
+### Layer 2 — the Sandbox suite (real install, real target machine)
+
+`tests/sandbox-test-suite.ps1` gained two new blocks that run *after* a real `Install.ps1`:
+
+- **T03f.1–T03f.2** — the repaired bindings are actually present in the generated whkdrc, and the
+  three files those hotkeys call exist in `%USERPROFILE%\.config`, including the
+  `safe-restart.repo.txt` marker.
+- **T07.1–T07.3** — a real export→import round trip: snapshot the live config by SHA256, export to
+  a ZIP, import it back, and assert every file is byte-identical afterwards, plus that a
+  `pre-import-backup-*` directory holding the old whkdrc was left behind.
+
+### The export→import round trip, verified
+
+`config-export-import.ps1` was executed end to end against a sandboxed profile (a fake
+`%USERPROFILE%` under `%TEMP%`, so the reference machine was never touched):
+
+```
+export:  archive written: ...\k1c-t7-rt2\backup.zip (9 entries)
+import:  current config backed up to: ...\pre-import-backup-20261004-043615
+         9 file(s) restored.
+verify:  komorebi.json: KJSON-V4      whkdrc: WHKDRC-V4      widget: WIDGET-V4
+         komorebi.json NOT wrongly in .config: True
+```
+
+Two real bugs were found and fixed by exactly this test before any code was committed:
+
+1. `komorebi.json` lives in `%USERPROFILE%`, not `.config`, so the restore loop wrote it to the
+   wrong directory and the WM kept the stale file. The archive now maps top-level names back to
+   their real home.
+2. `CreateEntryFromFile` is an *extension* method, so it has to be called through
+   `[System.IO.Compression.ZipFileExtensions]`, not on the `ZipArchive` object itself.

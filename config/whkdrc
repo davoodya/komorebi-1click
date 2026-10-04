@@ -4,12 +4,14 @@ alt + shift + e : C:\Progra~1\komorebi\bin\komorebic.exe stop
 alt + shift + p : C:\Progra~1\komorebi\bin\komorebic.exe toggle-pause
 alt + r : C:\Progra~1\komorebi\bin\komorebic.exe retile
 alt + i : C:\Progra~1\komorebi\bin\komorebic.exe toggle-shortcuts
-# alt + o : restart whkd so an edited whkdrc takes effect, via the wrapper the
-# installer writes next to this file. whkd 0.2.10 PANICS when one key is bound
-# twice in the same whkdrc (verified), so a single binding calls a single
-# command that performs both halves of the restart (stop, then start --whkd).
+# alt + shift + o : restart whkd so an edited whkdrc takes effect, via the
+# wrapper the installer writes next to this file. whkd 0.2.10 PANICS when one
+# key is bound twice in the same whkdrc (verified), so a single binding calls
+# a single command that performs both halves of the restart (stop, then start
+# --whkd). alt + o itself is deliberately left UNBOUND so the old muscle
+# memory cannot accidentally trigger anything.
 # The .cmd path is generated per machine, like the rest of this file.
-alt + o : C:\Users\DavoodYa\.config\restart-whkd.cmd
+alt + shift + o : C:\Users\DavoodYa\.config\restart-whkd.cmd
 alt + h : C:\Progra~1\komorebi\bin\komorebic.exe focus left
 alt + l : C:\Progra~1\komorebi\bin\komorebic.exe focus right
 alt + k : C:\Progra~1\komorebi\bin\komorebic.exe focus up
@@ -54,10 +56,10 @@ alt + shift + oem_minus : C:\Progra~1\komorebi\bin\komorebic.exe resize-edge up 
 alt + ctrl + shift + b : C:\Progra~1\komorebi\bin\komorebic.exe save-resize C:\Users\DavoodYa\.config\komorebi-resize.json
 alt + ctrl + c : C:\Progra~1\komorebi\bin\komorebic.exe load-resize C:\Users\DavoodYa\.config\komorebi-resize.json
 alt + t : C:\Progra~1\komorebi\bin\komorebic.exe toggle-float
-# alt + ctrl + t : toggle the active window's transparency. The old binding ran
-# a script from this user's .config directory that the installer does not ship;
-# komorebi has the same operation built in, so no extra file is needed.
-alt + ctrl + t : C:\Progra~1\komorebi\bin\komorebic.exe toggle-transparency
+# alt + ctrl + t : toggle the active window's transparency by running the
+# toggle-transparency.ps1 the installer ships next to this file. The percent
+# is baked into the script (85% transparent <-> fully opaque).
+alt + ctrl + t : powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\Users\DavoodYa\.config\toggle-transparency.ps1
 alt + f : C:\Progra~1\komorebi\bin\komorebic.exe toggle-maximize
 alt + m : C:\Progra~1\komorebi\bin\komorebic.exe minimize
 alt + shift + t : C:\Progra~1\komorebi\bin\komorebic.exe toggle-monocle
@@ -124,4 +126,9 @@ alt + ctrl + o : C:\Progra~1\komorebi\bin\komorebic.exe kill                    
 alt + ctrl + m : C:\Progra~1\komorebi\bin\komorebic.exe restore-windows         # recover windows that got lost
 alt + ctrl + u : C:\Progra~1\komorebi\bin\komorebic.exe visible-windows         # JSON of windows komorebi can see
 alt + ctrl + shift + m : notepad.exe
+# alt + ctrl + shift + r : the SAFE restart (safe-restart.ps1). A raw
+# komorebic stop/start races the watchdog and can hang on inherited pipe
+# handles; safe-restart.ps1 freezes the watchdog, snapshots the layout and
+# restarts without either failure. powershell.exe is found via PATH.
+alt + ctrl + shift + r : powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\DavoodYa\.config\safe-restart.ps1
 
