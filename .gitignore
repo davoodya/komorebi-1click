@@ -10,6 +10,12 @@ releases/*.zip
 komorebi-1click-install.exe
 install/
 
+# .NET build output for the Admin Dashboard. Never commit these: obj/ holds
+# machine-specific generated sources, so a naive recursive scan for *.cs finds
+# files that look like project sources but are not.
+[Bb]in/
+[Oo]bj/
+
 # Build/test scratch that must never be committed.
 [Ss]cratch/
 [Tt]emp/

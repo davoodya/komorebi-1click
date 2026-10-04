@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Admin Dashboard shell (ticket 10).
+
+    Script-first (ADR-0009): this app owns NO behaviour. Every button resolves a
+    verb through VerbRegistry and hands it to ScriptService, which runs an
+    existing .ps1. Nothing here reimplements what the scripts already do.
+
+    Package versions are pinned EXACTLY, with no floating ranges. WPF-UI is a
+    UI framework: a floating range would let `dotnet restore` pick a different
+    minor and change rendering with no code change at all.
+  -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>KomorebiDashboard</AssemblyName>
+    <RootNamespace>KomorebiDashboard</RootNamespace>
+    <ApplicationIcon />
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
+  </ItemGroup>
+
+</Project>

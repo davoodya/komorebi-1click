@@ -1,0 +1,56 @@
+<UserControl x:Class="KomorebiDashboard.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignHeight="480" d:DesignWidth="900">
+  <!--
+    ZERO LOGIC (ADR-0009). This View binds to Description / Commands / Output /
+    Status / Argument on its ViewModel and does nothing else. The buttons it
+    shows are generated from VerbRegistry by the ViewModel, so a new verb needs
+    no change here at all.
+  -->
+  <Grid Margin="16">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <TextBlock Grid.Row="0" Text="{Binding Description}" FontSize="14"
+               Opacity="0.75" Margin="0,0,0,12" TextWrapping="Wrap" />
+
+    <!-- Buttons, generated from the registry. -->
+    <ItemsControl Grid.Row="1" ItemsSource="{Binding Commands}">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <Button Content="{Binding Label}"
+                  ToolTip="{Binding Help}"
+                  Command="{Binding DataContext.RunVerbCommand,
+                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                  CommandParameter="{Binding Verb}"
+                  Padding="14,8" MinWidth="130" Margin="0,0,8,8" />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <!-- Argument box, used by the verbs that take one. -->
+    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,10">
+      <TextBlock Text="Arguments:" VerticalAlignment="Center" Margin="0,0,8,0" />
+      <TextBox Text="{Binding Argument, UpdateSourceTrigger=PropertyChanged}" Width="320" />
+    </StackPanel>
+
+    <!-- Live script output. -->
+    <TextBox Grid.Row="3" Text="{Binding Output}" IsReadOnly="True"
+             FontFamily="Consolas" FontSize="12" VerticalScrollBarVisibility="Auto"
+             HorizontalScrollBarVisibility="Auto" AcceptsReturn="True" TextWrapping="NoWrap" />
+
+    <TextBlock Grid.Row="4" Text="{Binding Status}" Margin="0,10,0,0" Opacity="0.8" />
+  </Grid>
+</UserControl>
