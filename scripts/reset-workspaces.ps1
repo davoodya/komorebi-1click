@@ -33,6 +33,7 @@ try {
         Say '  watchdog frozen' 'DarkGray'
     }
 } catch { Say "  could not touch the watchdog task: $($_.Exception.Message)" 'Yellow' }
+try {
 
 Say ''
 Say '=== stopping komorebi + whkd ===' 'Cyan'
@@ -78,3 +79,15 @@ try {
 Say ''
 Say 'done' 'Cyan'
 Say ''
+
+# -- crash-safe watchdog restore (defect D4) ------------------------------
+# The explicit restore earlier in this script only runs on the happy path.
+# This `finally` also runs when a step throws, when the script exits early and
+# on Ctrl+C, so a failed or interrupted restart can never leave the watchdog
+# disabled. Komorebi + whkd must stay supervised at all times; only kill-all
+# is allowed to stop them.
+} finally {
+    if ($watchWasEnabled) {
+        try { Enable-ScheduledTask -TaskName 'KomorebiWatchdog' | Out-Null } catch { }
+    }
+}

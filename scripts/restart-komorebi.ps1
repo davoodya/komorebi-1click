@@ -22,6 +22,7 @@ try {
         Disable-ScheduledTask -TaskName $WatchTask | Out-Null
     }
 } catch { }
+try {
 
 Write-Host "[restart-komorebi] stopping komorebi ..." -ForegroundColor Cyan
 Stop-ProcessTree "komorebi"
@@ -40,4 +41,16 @@ if (Test-Process "komorebi") {
 } else {
     Write-Host "[restart-komorebi] FAILED - komorebi is not running" -ForegroundColor Red
     exit 1
+}
+
+# -- crash-safe watchdog restore (defect D4) ------------------------------
+# The explicit restore earlier in this script only runs on the happy path.
+# This `finally` also runs when a step throws, when the script exits early and
+# on Ctrl+C, so a failed or interrupted restart can never leave the watchdog
+# disabled. Komorebi + whkd must stay supervised at all times; only kill-all
+# is allowed to stop them.
+} finally {
+    if ($watchWasEnabled) {
+        try { Enable-ScheduledTask -TaskName $WatchTask | Out-Null } catch { }
+    }
 }

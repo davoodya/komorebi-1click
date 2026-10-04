@@ -63,6 +63,7 @@ try {
         Say '[restart-whkd] watchdog frozen for the restart window' 'DarkGray'
     }
 } catch { Say "[restart-whkd] could not touch the watchdog task: $($_.Exception.Message)" 'Yellow' }
+try {
 
 # ── 2. stop the pair through the official command ───────────────────────
 # `komorebic stop --whkd` removes komorebi AND the whkd child it owns. A
@@ -194,4 +195,16 @@ if (Test-WhkdPaired) {
     Say '    komorebic start --whkd' 'Red'
     Say '[restart-whkd] (Komorebi restarts too — its saved layout is re-applied.)' 'DarkGray'
     exit 2
+}
+
+# -- crash-safe watchdog restore (defect D4) ------------------------------
+# The explicit restore earlier in this script only runs on the happy path.
+# This `finally` also runs when a step throws, when the script exits early and
+# on Ctrl+C, so a failed or interrupted restart can never leave the watchdog
+# disabled. Komorebi + whkd must stay supervised at all times; only kill-all
+# is allowed to stop them.
+} finally {
+    if ($watchWasEnabled) {
+        try { Enable-ScheduledTask -TaskName $WatchTask | Out-Null } catch { }
+    }
 }
