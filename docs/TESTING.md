@@ -96,6 +96,41 @@ must run in the Sandbox.
 | 02 — installer core | done (commit 942ff3e) | assertions defined; awaits a Sandbox run |
 | 03 — configuration generation | done (commit adb050b) | assertions defined; awaits a Sandbox run |
 | 04 — startup tasks | done (commit 887db72) | assertions defined; awaits a Sandbox run |
+| 05–07 — AHK + script portability + export/import | done | `ticket05-06-07.tests.ps1` — **65 assertions, 0 failures** on the live machine |
+| 08 — AutoHotkey lifecycle | done | `ticket08-ahk.tests.ps1` — **17 assertions green** |
+| 09 — EXE install wrapper | done (`f5363e6`) | `ticket09-exe-wrapper.tests.ps1` — **26 assertions green**, PS 5.1 + PS 7 |
+| 10 — Dashboard shell | done | `ticket10-dashboard-shell.tests.ps1` — **128 assertions** |
+| 11 — no-lag execution | done (`da42d3a`) | `ticket11-threading.tests.ps1` — **67 assertions**, launches the EXE |
+| 12 — theme + elevation | done (`639216a`) | `ticket12-theme-elevation.tests.ps1` **48** + `ticket12-runtime.tests.ps1` **16** |
 
 The Sandbox run itself is the single outstanding verification step for all four tickets.
 It requires no decisions — only launching `sandbox.wsb` and reading the printed result.
+
+## The Dashboard suites are different in kind
+
+Tickets 09–12 do **not** belong in `sandbox-test-suite.ps1`. They need a Windows desktop with
+the .NET 8 SDK, and they run on the development machine against the real tree:
+
+- `tests/ticket11-threading.tests.ps1` and `tests/ticket12-theme-elevation.tests.ps1` both
+  **start the EXE and require a non-zero window handle**. That is deliberate: defect D18 (no
+  `x:Name` on the six views, so `FindName` returned null and the app died at startup) was
+  invisible to 123 static assertions because nothing launched the app.
+- `tests/ticket12-runtime.tests.ps1` builds a throwaway probe project under
+  `tests/.build/` (gitignored) that references the real dashboard, hosts the actual `App`, and
+  reads the brushes WPF resolves. It asserts on observed colours — Dark `202020` vs Light
+  `FAFAFA`, 443 merged dictionary keys — rather than on a variable that merely flipped. It
+  touches nothing: no process is started or stopped, no script is run.
+
+Run them from Windows, not from WSL:
+
+```powershell
+foreach ($t in @('ticket05-06-07','ticket08-ahk','ticket09-exe-wrapper',
+                 'ticket10-dashboard-shell','ticket11-threading',
+                 'ticket12-theme-elevation','ticket12-runtime')) {
+    & "H:\Repo\komorebi-1click\tests\$t.tests.ps1"
+}
+```
+
+`ticket08-ahk` and `ticket05-06-07` write to the live Startup folder and the live `autohotkey`
+directory. Verify `AppRunner.vbs` is still present and the AutoHotkey interpreters are still
+running after they finish — `ticket08` runs `ahk-cleanup`, which removes generated artifacts.

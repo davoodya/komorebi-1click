@@ -356,3 +356,80 @@ started yet`. The suite asserts the achievable contract and documents the probe 
 **Verified:** 67/67 × 4 consecutive runs · build 0/0 · startup 553 ms · timeout kills a
 100,000-line script at 3.1 s leaving no orphan · 65+12+17+26+123 still pass · live
 komorebi/whkd/yasb PIDs and both scheduled tasks unchanged throughout.
+
+---
+
+## Ticket 12 — Dashboard theme + elevation (2026-10-05, `639216a`)
+
+**Theming (ADR-0015).** `ThemeService` keeps one cached `ThemesDictionary` per theme and applies
+it through WPF-UI's own `ApplicationThemeManager.Apply`, so the swap is immediate rather than on
+the next window. It runs **before** `MainWindow.Show()` — applying it after would make the user
+watch the default light palette repaint into dark, a priority-2 smoothness regression caused by
+priority-4 work. `MainWindow` hosts a `ui:TitleBar` and a *Toggle theme* button in the header.
+
+Custom chrome (`WindowStyle=None` + `AllowsTransparency`) was tried and **rejected**: it costs the
+window native resize and maximise. Priority-2 damage for priority-4 looks.
+
+**Elevation (ADR-0012).** Per-operation, not always-admin — the app opens unelevated and only
+admin verbs are gated. Three-button dialog (`OK | Rerun as Administrator | Cancel`), which is why
+`ElevationPromptWindow` exists: WPF's `MessageBox` has no three-button variant. The message is
+generated from `VerbDefinition.RequiresAdmin`, so it names the verb actually refused and cannot
+drift from the registry. The CLI twin gates on the same decision **before** launching and exits
+**740** (`ERROR_ELEVATION_REQUIRED`).
+
+### D19 — four WPF-UI 4.3.0 assumptions were wrong
+
+Each cost a build, and each would have shipped as a runtime crash:
+
+| Assumed | Actual |
+|---|---|
+| xmlns `…/wpfui/2022/xaml` | present on the assembly, but the markup compiler still fails **MC3074**; `clr-namespace:` works |
+| `ui:TitlebarButtons="Minimize\|Close"` | no such attribute, no `TitleBar.Template` control — `TitleBar` is a plain `Control` |
+| `ApplicationTheme.SystemTheme` | `SystemTheme` is a separate enum; use `ApplySystemTheme()`/`GetSystemTheme()`, and `GetAppTheme()` for an `ApplicationTheme` |
+| `Source="…Themes/Light.xaml"` | crashed startup: `Cannot locate resource 'themes/light.xaml'`. `ThemesDictionary` derives its own URI |
+
+All four were settled by reflecting over `Wpf.Ui.dll` rather than trusting the 4.x docs.
+
+### D20 — the first runtime probe proved nothing
+
+`ticket12-runtime.tests.ps1` initially reported `merged=0` and every brush `NULL`, yet
+`RepaintDeterministic` **passed** — because `NULL == NULL`. It created a bare
+`new Application()`, which never loads `App.xaml`, so no dictionary was merged at all. Fixed by
+hosting the real `App` and asserting `MergedDictionaries.Count >= 1` explicitly. Worth recording:
+a green assertion can be green for the wrong reason, and only a check that could have failed for
+a *specific* reason was worth keeping.
+
+### Two over-specified assertions, corrected rather than satisfied
+
+Both would have forced worse code to pass:
+
+- *"App.xaml merges the WPF-UI controls theme"* demanded the literal `Controls.Themes` /
+  `Themes.xaml`. No standalone controls dictionary exists, and naming the theme by path is the
+  exact startup crash above. Replaced with "merges the theme **without** a hardcoded `pack://`
+  path"; the 443-key dictionary is proven at runtime instead.
+- *"the CLI knows about `RequiresAdmin`"* demanded that token inside `App.xaml.cs`, which would
+  have forced a duplicated, drift-prone privilege check into the CLI. The CLI correctly
+  delegates to `CanRun(verb)`. Replaced, and a **stronger** ordering assertion added: `CanRun`
+  must appear *before* `service.Run`, because a gate placed after the launch is worse than no
+  gate — the destructive action has already happened.
+
+Also fixed: ticket 10's *"six tab views"* counted every `*.xaml` in `Views/`, which broke the
+moment ticket 12 added a dialog. It now derives the tab set from `MainWindow.xaml`.
+
+### Verified
+
+`dotnet build` 0 warnings / 0 errors · ticket 12 **48/48** static + **16/16** runtime ·
+ticket 10 **128/128** · ticket 11 **67/67** · 26 + 17 + 65 + 12 still green.
+
+Theme proven by observed pixels: Dark `202020` / Light `FAFAFA`, 443 merged keys, idempotent on
+re-apply. Elevation proven from the live token: unelevated, `kill-komorebi` and `kill-whkd`
+refuse, `restart-yasb` passes, `uninstall` returns 740 with nothing removed.
+
+**Live system untouched:** komorebi 25136 · whkd 38808 · yasb 47100 — identical to the session
+baseline · zero orphan processes · `AppRunner.vbs` present in Startup · 3 AutoHotkey
+interpreters running · 119 hotkey bindings.
+
+### Remaining
+
+Tickets 13 (publish pipeline) and 14 (verification harness). Still deferred: no-.NET-8-runtime
+execution, and observing the real UAC prompt on a UAC-enabled target (this machine has UAC off).
