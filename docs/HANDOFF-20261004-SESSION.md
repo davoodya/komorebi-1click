@@ -329,3 +329,30 @@ being delegated. Worth fixing separately.
 
 **Live stack after everything:** `komorebi=25136 whkd=38808 yasb=47100
 ahk=30420,35436`, watchdog `Ready`, `LastTaskResult=0x0`. Untouched throughout.
+
+---
+
+## Ticket 11 — no-lag execution (2026-10-05, `da42d3a`)
+
+`ScriptService` now attaches its output handlers and sets `EnableRaisingEvents` **before**
+`Process.Start`, uses no `Task.Run`, carries a per-run `CancellationTokenSource`, kills
+the **whole tree** on cancel (`Kill(entireProcessTree: true)`), enforces a 300 s default
+budget, and distinguishes timeout from user-cancel. `TabViewModelBase` buffers streamed
+output and flushes it with **one** `BeginInvoke` per ~50 ms window instead of one per
+line. `ScriptResult` carries `StandardError` / `Cancelled` / `TimedOut`.
+
+**D18 — the GUI had never been launched.** `MainWindow.xaml` set no `x:Name` on any of
+the six views; `FindName` therefore returned null for all six and the constructor threw
+`NullReferenceException` at startup. The null-forgiving operator hid it and ticket 10's
+123 static assertions could not see it, because none of them started the app. Now fixed,
+and `tests/ticket11-threading.tests.ps1` (67 assertions) launches the EXE and requires a
+non-zero window handle.
+
+**Spec correction, recorded not papered over.** The ticket's "async reads started before
+`Process.Start`" is impossible — `BeginOutputReadLine()` before `Start()` throws
+`InvalidOperationException: StandardOut has not been redirected or the process hasn't
+started yet`. The suite asserts the achievable contract and documents the probe output.
+
+**Verified:** 67/67 × 4 consecutive runs · build 0/0 · startup 553 ms · timeout kills a
+100,000-line script at 3.1 s leaving no orphan · 65+12+17+26+123 still pass · live
+komorebi/whkd/yasb PIDs and both scheduled tasks unchanged throughout.
