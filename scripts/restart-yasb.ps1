@@ -57,7 +57,13 @@ $svc = Get-Process -Name yasb, yasbc -ErrorAction SilentlyContinue
 if ($svc) { Write-Host ('  running  : ' + (($svc | ForEach-Object { $_.ProcessName }) -join ', ')) }
 else      { Write-Host '  running  : (not running)' }
 
-if ($DiagnoseOnly) { exit 0 }
+if ($DiagnoseOnly) {
+    # Append the shared stack report so all five restart scripts answer the
+    # same "is the stack actually healthy" question the same way.
+    . "$PSScriptRoot\common.ps1"
+    Show-KomorebiDiagnosis
+    exit 0
+}
 
 if (-not (Test-Path $Yasb)) { Write-Host "yasb not installed at $Yasb" -ForegroundColor Red; exit 1 }
 

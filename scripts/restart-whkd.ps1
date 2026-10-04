@@ -38,11 +38,15 @@
 # =====================================================================
 
 [CmdletBinding()]
-param()
+# -DiagnoseOnly prints a read-only report of the whole stack (processes,
+# komorebi/whkd pairing, watchdog task state) and changes nothing.
+param([switch]$DiagnoseOnly)
 
 $ErrorActionPreference = 'Stop'
 
 . "$PSScriptRoot\common.ps1"
+
+if ($DiagnoseOnly) { Show-KomorebiDiagnosis; exit 0 }
 
 $komorebic = Resolve-KomorebicExe
 $WatchTask = 'KomorebiWatchdog'

@@ -15,10 +15,17 @@
         This script does exactly that, and confirms the order afterwards.
 #>
 [CmdletBinding()]
-param()
+# -DiagnoseOnly prints a read-only report of the whole stack (processes,
+# komorebi/whkd pairing, watchdog task state) and changes nothing.
+param([switch]$DiagnoseOnly)
 
 $ErrorActionPreference = 'Stop'
 $KomorebiExe = 'C:\Program Files\komorebi\bin\komorebic.exe'
+
+# common.ps1 provides Show-KomorebiDiagnosis for -DiagnoseOnly.
+. "$PSScriptRoot\common.ps1"
+
+if ($DiagnoseOnly) { Show-KomorebiDiagnosis; exit 0 }
 
 function Say($msg, $color = 'Gray') { Write-Host $msg -ForegroundColor $color }
 

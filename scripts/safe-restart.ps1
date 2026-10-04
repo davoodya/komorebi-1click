@@ -30,8 +30,11 @@
 #>
 
 [CmdletBinding()]
+# -DiagnoseOnly prints a read-only report of the whole stack (processes,
+# komorebi/whkd pairing, watchdog task state) and changes nothing.
 param(
-    [switch] $SkipVerify
+    [switch] $SkipVerify,
+    [switch] $DiagnoseOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -61,6 +64,23 @@ if (-not $ServicePs1) {
     if (Test-Path -LiteralPath $candidate) { $ServicePs1 = $candidate }
 }
 if (-not $ServicePs1) { throw "komorebi-service.ps1 could not be located. Expected the repo path in $marker, or the file next to this script." }
+
+if ($DiagnoseOnly) {
+    # safe-restart has no $RepoRoot and does not dot-source common.ps1: it is
+    # copied into %USERPROFILE%\.config by the installer, where the library
+    # lives back in the repo. $ServicePs1 already points at
+    # <repo>\scripts\komorebi-service.ps1 (via safe-restart.repo.txt, or the
+    # dev layout), so its grandparent is the repo root and common.ps1 is a
+    # sibling. Deriving it here keeps one report implementation for all five
+    # restart scripts.
+    $commonPs1 = Join-Path (Split-Path -Parent $ServicePs1) 'common.ps1'
+    if (-not (Test-Path -LiteralPath $commonPs1)) {
+        throw "common.ps1 could not be located next to $ServicePs1."
+    }
+    . $commonPs1
+    Show-KomorebiDiagnosis
+    exit 0
+}
 
 # ── 1. snapshot the current layout so we can prove nothing was lost ──────
 $before = @{}

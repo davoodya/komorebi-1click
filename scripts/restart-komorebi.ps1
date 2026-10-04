@@ -8,7 +8,14 @@
 # the whole restart window here to make that impossible.
 # Usage: powershell -ExecutionPolicy Bypass -File restart-komorebi.ps1
 # =====================================================================
+[CmdletBinding()]
+# -DiagnoseOnly prints a read-only report of the whole stack (processes,
+# komorebi/whkd pairing, watchdog task state) and changes nothing.
+param([switch]$DiagnoseOnly)
+
 . "$PSScriptRoot\common.ps1"
+
+if ($DiagnoseOnly) { Show-KomorebiDiagnosis; exit 0 }
 
 $komorebi = Resolve-KomorebiExe
 $WatchTask = 'KomorebiWatchdog'
