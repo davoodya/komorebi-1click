@@ -177,6 +177,7 @@ function Get-Health {
         Socket         = $false
         Whkd           = $false
         WhkdUptime     = 'n/a'
+        WhkdPaired     = $false
         Monitors       = 0
         TiledWindows   = 0
         HotkeyBindings = 0
@@ -193,6 +194,39 @@ function Get-Health {
     if ($proc) { $h.Process = $true; $h.ProcessUptime = Get-Uptime $proc }
     $w = Get-Process -Name whkd -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($w) { $h.Whkd = $true; $h.WhkdUptime = Get-Uptime $w }
+
+    # PAIRING CHECK (the bug that silently kills every hotkey):
+    # whkd can be alive, parsing whkdrc perfectly, and STILL be useless —
+    # when it was not spawned by `komorebic start --whkd` it registers the
+    # hotkeys but its komorebic calls do not reach this komorebi instance.
+    #
+    # The signal: `--whkd` launches whkd through a transient helper that exits
+    # immediately, so whkd's parent PID points at a GONE process. A standalone
+    # whkd instead has a LIVE shell (pwsh/powershell/cmd) as its parent. Walk
+    # the chain: reaching a gone parent means the official launcher ran it;
+    # reaching a live shell means something else did.
+    if ($h.Whkd -and $h.Process) {
+        $cur = Get-CimInstance Win32_Process -Filter "Name = 'whkd.exe'" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        $seen = @{}
+        $paired = $false
+        for ($i = 0; $cur -and $i -lt 12 -and -not $seen.ContainsKey($cur.ProcessId); $i++) {
+            if ($cur.Name -ieq 'komorebi.exe') { $paired = $true; break }
+            $seen[$cur.ProcessId] = $true
+            $next = Get-CimInstance Win32_Process -Filter "ProcessId = $($cur.ParentProcessId)" -ErrorAction SilentlyContinue
+            if ($null -eq $next) {
+                # The parent is gone. komorebi's own --whkd launcher is a
+                # short-lived helper that exits right after spawning whkd, so a
+                # dead parent here is the signature of the OFFICIAL start path.
+                $paired = $true
+                break
+            }
+            # A live shell as whkd's ancestor is the standalone (broken) case.
+            if ($next.Name -imatch 'pwsh\.exe|powershell\.exe|cmd\.exe|wt\.exe|conhost\.exe') { break }
+            $cur = $next
+        }
+        $h.WhkdPaired = $paired
+    }
 
     if (Test-Path $WhkdrcPath) {
         $h.HotkeyBindings = @(Get-Content $WhkdrcPath -ErrorAction SilentlyContinue |
@@ -261,6 +295,15 @@ function Show-Status {
     Write-Host ('  komorebi process : {0}  (up {1})' -f $h.Process, $h.ProcessUptime) -ForegroundColor $(if ($h.Process) { 'Green' } else { 'Red' })
     Write-Host ('  socket alive     : {0}' -f $h.Socket) -ForegroundColor $(if ($h.Socket) { 'Green' } else { 'Red' })
     Write-Host ('  whkd (hotkeys)   : {0}  (up {1})' -f $h.Whkd, $h.WhkdUptime) -ForegroundColor $(if ($h.Whkd) { 'Green' } else { 'Red' })
+    # Report the pairing separately from the process: a whkd that is alive but
+    # NOT paired registers every hotkey and then drops every command, which is
+    # exactly the silent failure mode this check exists to surface.
+    if ($h.Whkd -and -not $h.WhkdPaired) {
+        Write-Host ('  whkd PAIRING     : BROKEN - whkd is alive but NOT spawned by komorebi') -ForegroundColor Red
+        Write-Host '                     fix: komorebic stop --whkd; komorebic start --whkd' -ForegroundColor Red
+    } elseif ($h.Whkd -and $h.WhkdPaired) {
+        Write-Host '  whkd PAIRING     : OK (spawned by komorebi --whkd)' -ForegroundColor Green
+    }
     Write-Host ('  hotkey bindings  : {0}' -f $h.HotkeyBindings)
     Write-Host ('  monitors         : {0}' -f $h.Monitors)
     Write-Host ('  tiled windows    : {0}' -f $h.TiledWindows)
@@ -445,7 +488,14 @@ function Start-Komorebi {
             Write-Log 'whkd did not start - hotkeys will NOT work' -Level 'ERROR'
             return $false
         }
-        Write-Log 'whkd started via absolute path'
+        # CRITICAL: a whkd started this way is NOT paired with komorebi. It
+        # registers every hotkey and then drops every command, so the WM looks
+        # healthy while nothing responds to the keyboard. Do not report success.
+        Write-Log 'whkd started standalone (NOT paired with komorebi) - hotkeys will be dead' -Level 'ERROR'
+        Write-Host '  whkd is running but is NOT paired with komorebi.' -ForegroundColor Red
+        Write-Host '  Hotkeys will be dead. Re-run with `komorebic stop --whkd` then' -ForegroundColor Red
+        Write-Host '  `komorebic start --whkd` so komorebi owns the whkd child.' -ForegroundColor Red
+        return $false
     }
 
     Write-Log 'komorebi + whkd are up'

@@ -178,6 +178,16 @@ if ($task) {
     Assert "logon task arguments are 'start --whkd'" ($a.Arguments -eq 'start --whkd')
 }
 
+Section 'T04.1b — whkd is PAIRED with komorebi (hotkeys actually live)'
+# A whkd that is alive but was NOT spawned by `komorebic start --whkd` registers
+# every hotkey and then drops every command — the WM looks perfectly healthy
+# while the whole keyboard is dead. This is LGUG2Z/komorebi#956. The health
+# check has a dedicated pairing probe; assert it is green after a real install.
+. "$Repo\scripts\komorebi-service.ps1"
+$health = Get-Health
+Assert 'whkd is running' $health.Whkd
+Assert 'whkd is paired with komorebi (not a standalone instance)' $health.WhkdPaired
+
 Section 'T04.2 — the watchdog task (self-healing)'
 
 $wd = Get-ScheduledTask -TaskName 'KomorebiWatchdog' -ErrorAction SilentlyContinue

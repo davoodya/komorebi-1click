@@ -1,6 +1,17 @@
 # SCRIPTS-GUIDE — Komorebi + WHKD + YASB
 
-> همه‌ی اسکریپت‌های این دایرکتوری **SAFE** و برای کانفیگ‌های فعلی (komorebi 0.1.41 / whkd 0.2.10 / yasb) آزمایش‌شده‌اند. هر `.bat` یک wrapper کاربرپسند برای یک `.ps1` است.
+> **⚠ Read this before restarting whkd.**
+> If hotkeys are dead but the YASB bar still shows workspaces, do NOT restart
+> whkd — that cannot fix it. whkd must be spawned by `komorebic start --whkd`;
+> started any other way it registers every hotkey and then drops every command
+> (LGUG2Z/komorebi#956). The repair is `komorebic stop --whkd`, clear the stale
+> socket/hwnd state, then `komorebic start --whkd`.
+> `Get-Health` / `4-STATUS.bat` reports this as `whkd PAIRING`.
+> Full write-up: `docs/POSTMORTEM-20261004-whkd-pairing.md`.
+
+> Every script in this directory is SAFE and tested against the current
+> configuration (komorebi 0.1.41 / whkd 0.2.10 / yasb). Each `.bat` is a
+> user-friendly wrapper for one `.ps1`.
 >
 > **دایرکتوری معادل در WSL:** `~/Obsidian/Hermes/Knowledge/Windows/komorebi/final-scripts`
 > **دایرکتوری اصلی (قدیمی):** `F:\Backups\Software-Backups\komorebi-whkd\managements` (هنوز پابرجاست؛ فقط نسخه‌های قدیمی در آن است)

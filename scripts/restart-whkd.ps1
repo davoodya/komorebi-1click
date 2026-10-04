@@ -36,9 +36,39 @@ if ($watchWasEnabled) {
     Write-Host "[restart-whkd] watchdog re-enabled" -ForegroundColor DarkGray
 }
 
-if (Test-Process "whkd") {
-    Write-Host "[restart-whkd] DONE - whkd running, new hotkeys active" -ForegroundColor Green
-} else {
+if (-not (Test-Process "whkd")) {
     Write-Host "[restart-whkd] FAILED - whkd is not running" -ForegroundColor Red
     exit 1
+}
+
+# A whkd that is running is NOT proof the hotkeys work. whkd is only effective
+# when it is paired with a komorebi instance started with `--whkd`; a standalone
+# whkd registers every hotkey and then drops every command, and the whole
+# keyboard goes dead while the WM looks perfectly healthy.
+# This script is the one a user reaches for when hotkeys stop working, so it
+# must say so out loud instead of printing DONE.
+$paired = $false
+try {
+    $cur = Get-CimInstance Win32_Process -Filter "Name = 'whkd.exe'" -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    $seen = @{}
+    for ($i = 0; $cur -and $i -lt 12 -and -not $seen.ContainsKey($cur.ProcessId); $i++) {
+        $seen[$cur.ProcessId] = $true
+        $next = Get-CimInstance Win32_Process -Filter "ProcessId = $($cur.ParentProcessId)" -ErrorAction SilentlyContinue
+        if ($null -eq $next) { $paired = $true; break }
+        if ($next.Name -imatch 'pwsh\.exe|powershell\.exe|cmd\.exe|wt\.exe|conhost\.exe') { break }
+        if ($next.Name -ieq 'komorebi.exe') { $paired = $true; break }
+        $cur = $next
+    }
+} catch { }
+
+if ($paired) {
+    Write-Host "[restart-whkd] DONE - whkd running and paired, new hotkeys active" -ForegroundColor Green
+} else {
+    Write-Host "[restart-whkd] whkd is running but NOT paired with komorebi." -ForegroundColor Red
+    Write-Host "[restart-whkd] Hotkeys will be dead. Repair with:" -ForegroundColor Red
+    Write-Host "    komorebic stop --whkd" -ForegroundColor Red
+    Write-Host "    komorebic start --whkd" -ForegroundColor Red
+    Write-Host "[restart-whkd] (Komorebi restarts too — no open windows are lost.)" -ForegroundColor DarkGray
+    exit 2
 }

@@ -69,6 +69,12 @@ the target user with at least one monitor block and 9 workspaces,
 `layered_whitelist` retains the mintty rule, no source-machine username or path appears
 anywhere under `.config`, and `komorebic check` exits 0 on the generated config.
 
+**T04.1b — whkd pairing (new, 2026-10-04):** after a real install the suite now
+asserts `Get-Health.WhkdPaired` is true. A whkd that is alive but was not
+spawned by `komorebic start --whkd` silently drops every hotkey while the rest
+of the WM looks healthy — this is the exact regression the postmortem
+(`docs/POSTMORTEM-20261004-whkd-pairing.md`) was written for.
+
 **T04.1–T04.4 — startup machinery (ticket 04):** the `Komorebi` logon task exists at
 `RunLevel Highest` with a logon trigger running `komorebic.exe start --whkd`; the
 `KomorebiWatchdog` task exists at `RunLevel Highest`, repeats every 5 minutes, invokes
