@@ -38,7 +38,7 @@ truth for *what runs*. Test files are written in dev and copied across.
 | 05 | AutoHotkey integration (AppRunner.vbs) | ✅ done (commit 92e1e90) |
 | 06 | management-script portability | ✅ done (commit 0064b36) |
 | 07 | export / import ZIP | ✅ done (commit c0ca4d0) |
-| 08 | AutoHotkey lifecycle scripts | ✅ done (commit `PEND`) |
+| 08 | AutoHotkey lifecycle scripts | ✅ done (commit 5ae504f) |
 | 09 | EXE wrapper (csc) | ready |
 | 10–13 | Dashboard (shell, threading, theme, publish) | blocked by 10's own chain |
 | 14 | verification harness (Windows Sandbox) | blocked by 09 + 13 |
