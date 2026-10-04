@@ -3119,6 +3119,26 @@
     "kind": "Title",
     "id": "Control Panel",
     "matching_strategy": "Legacy"
+   },
+   {
+    "kind": "Title",
+    "id": "Network Connections",
+    "matching_strategy": "Legacy"
+   },
+   {
+    "kind": "Title",
+    "id": "Computer Management",
+    "matching_strategy": "Legacy"
+   },
+   {
+    "kind": "Title",
+    "id": "Disk Management",
+    "matching_strategy": "Legacy"
+   },
+   {
+    "kind": "Title",
+    "id": "Event Viewer",
+    "matching_strategy": "Legacy"
    }
   ]
  },

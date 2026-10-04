@@ -67,9 +67,29 @@
       "matching_strategy": "Equals"
     },
     {
-      "kind": "Class",
+      "kind": "Title",
       "id": "Network Connections",
-      "matching_strategy": "Regex"
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Title",
+      "id": "Control Panel",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Title",
+      "id": "Computer Management",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Title",
+      "id": "Disk Management",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Title",
+      "id": "Event Viewer",
+      "matching_strategy": "Equals"
     },
     {
       "kind": "Class",
