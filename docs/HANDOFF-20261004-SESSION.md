@@ -433,3 +433,86 @@ interpreters running · 119 hotkey bindings.
 
 Tickets 13 (publish pipeline) and 14 (verification harness). Still deferred: no-.NET-8-runtime
 execution, and observing the real UAC prompt on a UAC-enabled target (this machine has UAC off).
+
+---
+
+## Ticket 13 — publish pipeline (2026-10-05, `07e374e`)
+
+`dotnet publish src/KomorebiDashboard -c Release` from the repo root now produces **exactly one
+161 MB file** at `releases\KomorebiDashboard.exe` — no satellite DLLs, no folders. Flags:
+`RuntimeIdentifier=win-x64` · `SelfContained` · `PublishSingleFile` ·
+`IncludeNativeLibrariesForSelfExtract` · `PublishReadyToRun` · `PublishTrimmed=false` ·
+`PublishDir` pinned to `releases\`.
+
+**Self-containment is proven, not assumed.** The bundle was scanned: `coreclr`,
+`System.Private.CoreLib`, `PresentationFramework/Core/UI`, `WindowsBase`, `WPF-UI`,
+`CommunityToolkit.Mvvm` and **both** runtime packs (`Microsoft.NETCore.App` +
+`Microsoft.WindowsDesktop.App`) are inside the binary, targeting `win-x64` /
+`.NETCoreApp,Version=v8.0`, with the R2R marker present. A framework-dependent build contains
+neither runtime pack — that is what makes this a real check.
+
+Launches in **645–698 ms** to a live, themed, responsive window from `releases/` **and** from an
+isolated temp folder holding nothing but the EXE. Note `hostfxr` is absent *by design*
+(`PublishSingleFile` inlines the host), so an assertion listing it would fail a good artefact.
+
+### D21 — the RID moved the build output, and every verb died with exit 127
+
+`RuntimeIdentifier` is not publish-only: it pushed `dotnet build` output from
+`bin\Release\net8.0-windows\` into `…\win-x64\`. The script locator was a fixed
+`..\..\..\..\..\` chain calibrated to the old depth, so it overshot and **every verb failed with
+exit 127 in development builds**. Caught by ticket 12's `chatty verb exits 0`.
+
+The root cause was a duplication: `MainWindow` and the CLI twin each held a private copy of the
+probing logic. Two copies of path logic is one too many, and fixing one would have left the other
+to break later. Both now call `Services.ScriptsLocator`, which **walks up until it finds
+`kill-all.ps1`** and is therefore independent of build-output depth — and will survive the win-x86
+matrix ADR-0015 defers to v2. Adding one more `..` would have fixed the symptom and kept the bug.
+
+Three suites had the old EXE path hardcoded. They now resolve it through
+`tests/dashboard-paths.ps1`, which globs and works with or without a RID folder.
+
+### D22 — a self-contained exe cannot be referenced (NETSDK1151)
+
+Making the app self-contained broke `tests/ticket12-runtime.tests.ps1`, whose probe project
+references the dashboard:
+
+    error NETSDK1151: The referenced project ... is a self-contained executable.
+    A self-contained executable cannot be referenced by a non self-contained executable.
+
+The probe is now self-contained to match, and its EXE path is globbed because the RID folder
+moves it. Recorded because it means the probe is now **coupled to the publish mode** — change the
+publish flags and the probe must follow.
+
+Both defects are the same shape: a publish-time decision silently invalidating assumptions held
+elsewhere. Worth re-checking those two spots whenever the flags change.
+
+### Tests
+
+- `tests/ticket13-publish.tests.ps1` — **15** assertions on the flags (parsed as XML properties,
+  not grepped, so a flag mentioned only in a comment does not count as set), the recorded reasons,
+  and the output shape. `-NoPublish` skips the publish step.
+- `tests/ticket13-runtime.tests.ps1` — **24** assertions on the artefact. Both suites print a
+  standing reminder that **D-T1 is unproven**.
+- `tests/dashboard-paths.ps1` — shared resolver, not a suite.
+
+The two ticket-13 suites are split deliberately: a framework-dependent build passes the flag suite
+*and* launches on this machine, because the SDK is installed. Only the bundle scan tells them
+apart — which is exactly why D-T1 still has to wait for the Sandbox.
+
+### Verified
+
+15/15 + 24/24 · full regression across **10 suites**: 65 + 17 + 26 + 128 + 67 + 48 + 16 + 15 +
+24 + 12, **zero FAIL lines** · `dotnet build` 0 warnings / 0 errors · `releases/` = 1 file ·
+komorebi 25136 · whkd 38808 · yasb 47100 unchanged · zero orphans · `AppRunner.vbs` present ·
+3 AutoHotkey interpreters running.
+
+### Deferred, now registered as tracked items
+
+**D-T1** (no .NET 8 runtime installed) and **D-T2** (real UAC prompt) are written up in
+`docs/TESTING.md` under *DEFERRED TESTS*, each with what, why it is deferred, how to run it, pass
+criteria, and what it blocks. D-T1 **blocks ticket 13 from being fully closed**: everything that
+can be proven here is proven, and the one claim that cannot is the ticket's central one.
+
+### Remaining
+
+Ticket 14 (verification harness). Then D-T1 and D-T2.

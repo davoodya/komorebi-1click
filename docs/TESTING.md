@@ -102,6 +102,7 @@ must run in the Sandbox.
 | 10 — Dashboard shell | done | `ticket10-dashboard-shell.tests.ps1` — **128 assertions** |
 | 11 — no-lag execution | done (`da42d3a`) | `ticket11-threading.tests.ps1` — **67 assertions**, launches the EXE |
 | 12 — theme + elevation | done (`639216a`) | `ticket12-theme-elevation.tests.ps1` **48** + `ticket12-runtime.tests.ps1` **16** |
+| 13 — publish pipeline | done (`07e374e`) | `ticket13-publish.tests.ps1` **15** + `ticket13-runtime.tests.ps1` **24**. **D-T1 still open** — see below. |
 
 The Sandbox run itself is the single outstanding verification step for all four tickets.
 It requires no decisions — only launching `sandbox.wsb` and reading the printed result.
@@ -151,16 +152,31 @@ the .NET 8 SDK, and they run on the development machine against the real tree:
   reads the brushes WPF resolves. It asserts on observed colours — Dark `202020` vs Light
   `FAFAFA`, 443 merged dictionary keys — rather than on a variable that merely flipped. It
   touches nothing: no process is started or stopped, no script is run.
+- `tests/dashboard-paths.ps1` is a **shared helper, not a suite**. It resolves the built EXE by
+  globbing `bin\Release\**\KomorebiDashboard.exe`. Ticket 13 added `RuntimeIdentifier=win-x64`,
+  which pushed `dotnet build` output into a `win-x64\` subfolder and broke the three suites that
+  hardcoded the old path. Globbing also survives the win-x86 matrix ADR-0015 defers to v2.
+- `tests/ticket13-publish.tests.ps1` checks the publish **flags** (and can run `dotnet publish`
+  itself; pass `-NoPublish` to skip). `tests/ticket13-runtime.tests.ps1` checks the **artefact**:
+  exactly one file in `releases/`, both runtime packs and the R2R marker present *inside* the
+  binary, and the app launching from an isolated temp directory containing only the EXE. The
+  split matters — a framework-dependent build passes the flag suite and also launches on this
+  machine, so only the bundle scan distinguishes them.
 
 Run them from Windows, not from WSL:
 
 ```powershell
 foreach ($t in @('ticket05-06-07','ticket08-ahk','ticket09-exe-wrapper',
                  'ticket10-dashboard-shell','ticket11-threading',
-                 'ticket12-theme-elevation','ticket12-runtime')) {
+                 'ticket12-theme-elevation','ticket12-runtime',
+                 'ticket13-publish','ticket13-runtime','ticket-monitor')) {
     & "H:\Repo\komorebi-1click\tests\$t.tests.ps1"
 }
 ```
+
+Note `ticket05-06-07.tests.ps1` never calls `exit`, so `$LASTEXITCODE` is blank after it. That is
+a property of that suite, not a failure — read its printed `assertions:` / `failures:` lines
+instead of the exit code.
 
 `ticket08-ahk` and `ticket05-06-07` write to the live Startup folder and the live `autohotkey`
 directory. Verify `AppRunner.vbs` is still present and the AutoHotkey interpreters are still
