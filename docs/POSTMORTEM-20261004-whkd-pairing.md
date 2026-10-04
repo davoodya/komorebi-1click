@@ -79,6 +79,42 @@ Verified after the restart:
 The hotkeys and the special-window management rules both came back with this
 single pairing repair.
 
+## Why the pairing breaks in the first place (and the elevated-window half)
+
+The same restart hides a second failure. komorebi can only manage windows it
+can open, and a window manager running at a lower integrity level than a
+process cannot touch that process's windows. So an **unelevated** komorebi
+silently drops every elevated window — and the Hermes window — out of the
+layout, exactly as if they had never been opened.
+
+The reference machine is not an Administrator account, so
+`Start-Process -Verb RunAs` cannot obtain an elevated token without a consent
+prompt an automated run cannot answer (`ConsentPromptBehaviorAdmin=0` with a
+non-admin user does not auto-elevate). The reliable way to an elevated
+komorebi is the `Komorebi` logon task the installer registers at
+`RunLevel Highest`: `Start-ScheduledTask -TaskName 'Komorebi'` launches
+`komorebic.exe start --whkd` with the elevated token.
+
+Verified on the reference machine after the fix:
+`komorebi pid=21108 elevated=True`, `whkd pid=48580 elevated=True`, and 12-14
+windows tiled including elevated applications.
+
+`restart-whkd.ps1` and `safe-restart.ps1` now both take this path when they
+are not already elevated, and `komorebi-service.ps1` gained a `-Action stop`
+so `safe-restart.ps1` can stop the pair and hand the start to the elevated
+task. `tests/sandbox-test-suite.ps1` section `T04.1c` asserts komorebi is
+elevated after a real install.
+
+### A probe bug worth remembering
+
+The first elevation checks reported `elevated=False` for every process and
+sent the investigation down a dead end. They called `OpenProcess` with
+`PROCESS_QUERY_INFORMATION | PROCESS_VM_READ` (0x0410), which UIPI denies for
+processes outside the caller's integrity context, so `OpenProcess` returned
+zero and the probe fell through to its default. The correct mask is
+`PROCESS_QUERY_LIMITED_INFORMATION` (0x1000). The fixed probe is embedded in
+the health check so this mistake cannot recur silently.
+
 ## Prevention — applied to the codebase
 
 ### 1. The fallback can no longer silently succeed

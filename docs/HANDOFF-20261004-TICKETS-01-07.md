@@ -102,6 +102,17 @@ Three whkdrc hotkeys pointed at files the installer never shipped. Fixed properl
 > exposes a `WhkdPaired` probe, and `tests/sandbox-test-suite.ps1` section
 > `T04.1b` asserts the probe after a real install. Full write-up:
 > `docs/POSTMORTEM-20261004-whkd-pairing.md`.
+>
+> **The elevated-window half of the same bug.** An unelevated komorebi cannot
+> manage elevated windows (UAC integrity levels), so a restart done from a
+> non-elevated shell silently drops every elevated window and the Hermes window
+> out of the layout. The reference account is not an Administrator, so
+> `-Verb RunAs` cannot elevate silently. Both `restart-whkd.ps1` and
+> `safe-restart.ps1` now stop the pair and hand the start to the installer's
+> `Komorebi` logon task, which is `RunLevel Highest`. `komorebi-service.ps1`
+> gained `-Action stop` for this. Section `T04.1c` asserts komorebi comes back
+> elevated. Verified: `komorebi pid=21108 elevated=True`, 12 windows tiled
+> including elevated apps.
 
 `Install-Configuration` now installs `toggle-transparency.ps1` and `safe-restart.ps1`
 into `%USERPROFILE%\.config` with SHA256 idempotency, and writes

@@ -98,9 +98,36 @@ try {
 # Run it IN THIS PROCESS. Spawning a nested powershell.exe makes the child
 # inherit this script's stdout pipe, and since that child in turn launches the
 # long-lived komorebi/whkd, the outer script would never exit.
+#
+# The elevated and Hermes windows that komorebi manages are only reachable
+# when the window manager itself runs with an elevated token. The current
+# user account is not an Administrator, so a bare `Start-Process -Verb RunAs`
+# cannot obtain one silently. The installer's `Komorebi` logon task is
+# registered at RunLevel Highest for exactly this reason, so the restart
+# triggers THAT task instead of launching komorebi from this shell. A
+# non-elevated restart would leave every elevated window unmanaged.
 Say '  restarting komorebi + whkd...' 'Cyan'
-& $ServicePs1 -Action restart | Out-Null
-Say '  restart returned' 'DarkGray'
+
+$identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = New-Object Security.Principal.WindowsPrincipal($identity)
+$elevated  = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if ($elevated) {
+    Say '  already elevated: restarting via the service script' 'DarkGray'
+    & $ServicePs1 -Action restart | Out-Null
+    Say '  restart returned' 'DarkGray'
+} else {
+    Say '  not elevated: stopping here, then starting via the Komorebi logon task' 'DarkGray'
+    & $ServicePs1 -Action stop | Out-Null
+    try {
+        Start-ScheduledTask -TaskName 'Komorebi' -ErrorAction Stop
+        Say '  elevated komorebi started via the Komorebi logon task' 'DarkGray'
+        Start-Sleep -Seconds 3
+    } catch {
+        Say "  could not start the elevated logon task: $($_.Exception.Message)" 'Red'
+        Say '  fallback: log off and back on, or run this script as Administrator.' 'Yellow'
+    }
+}
 
 # ── 4. restore the watchdog ──────────────────────────────────────────────
 if ($watchWasEnabled) {

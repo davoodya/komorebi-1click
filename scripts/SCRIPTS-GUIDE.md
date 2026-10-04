@@ -9,6 +9,21 @@
 > `Get-Health` / `4-STATUS.bat` reports this as `whkd PAIRING`.
 > Full write-up: `docs/POSTMORTEM-20261004-whkd-pairing.md`.
 
+> **⚠ And before you start komorebi from a script.**
+> An unelevated komorebi cannot manage elevated windows, so a restart run from
+> a non-elevated shell drops every elevated window and the Hermes window out of
+> the layout. `restart-whkd.ps1` and `safe-restart.ps1` handle this: when they
+> are not already elevated they stop the pair and trigger the installer's
+> `Komorebi` logon task (RunLevel Highest) to bring it back elevated. Never
+> replace that with a plain `Start-Process komorebic.exe start --whkd`.
+
+> **⚠ Installer failures.**
+> Komorebi and WHKD are primary — a failure aborts the install. YASB and
+> AutoHotkey are secondary — a failure is reported with its cause and remedy and
+> the install continues. Re-running the installer reinstalls only what failed,
+> because every step detects what is already installed and skips it.
+> Details: `docs/INSTALL-FAILURE-HANDLING.md`.
+
 > Every script in this directory is SAFE and tested against the current
 > configuration (komorebi 0.1.41 / whkd 0.2.10 / yasb). Each `.bat` is a
 > user-friendly wrapper for one `.ps1`.

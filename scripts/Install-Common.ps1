@@ -63,13 +63,36 @@ function Write-StepSkipped {
 .SYNOPSIS
     Reports a failed installer step the way the specification requires:
     the failing step, the underlying cause, and the concrete remedy.
+
+.DESCRIPTION
+    Accepts EITHER an ErrorRecord (the normal case: called from a catch block
+    with `-ErrorRecord $_`) OR an explicit Cause/Remedy pair. A catch block
+    hands over an ErrorRecord, so accepting both keeps every call site
+    simple while still allowing a hand-written cause when the failure is a
+    logical one that threw no exception.
 #>
 function Report-InstallerFailure {
     param(
         [Parameter(Mandatory)][string]$Step,
-        [Parameter(Mandatory)][string]$Cause,
-        [Parameter(Mandatory)][string]$Remedy
+        [Parameter()][string]$Cause,
+        [Parameter()][string]$Remedy,
+        [Parameter()]$ErrorRecord
     )
+
+    # Normalise: an ErrorRecord is the common input, but the message we want
+    # the user to read is the innermost one — most MSI and .NET failures wrap
+    # the real reason two or three layers deep.
+    if (-not $Cause -and $ErrorRecord) {
+        $msg = $ErrorRecord.Exception.Message
+        $inner = $ErrorRecord.Exception
+        while ($inner.InnerException) { $inner = $inner.InnerException; $msg = $inner.Message }
+        $Cause = $msg
+    }
+    if (-not $Cause) { $Cause = 'No additional detail was captured.' }
+    if (-not $Remedy) {
+        $Remedy = 'Resolve the reported cause, then run the installer again. Every completed step is detected and skipped, so only this step re-runs.'
+    }
+
     Write-Host ''
     Write-Host 'INSTALL STOPPED' -ForegroundColor Red
     Write-Host ('  Failing step: {0}' -f $Step) -ForegroundColor Red
@@ -78,6 +101,20 @@ function Report-InstallerFailure {
     Write-Host ''
     Write-Host 'Nothing after this step was modified. Resolve the problem above' -ForegroundColor DarkGray
     Write-Host 'and run the installer again — completed steps will be skipped.' -ForegroundColor DarkGray
+    Write-Host ''
+}
+
+<#
+.SYNOPSIS
+    Final summary line for an aborted install.
+#>
+function Write-InstallerFailureFooter {
+    param([Parameter(Mandatory)][string]$Reason)
+    Write-Host ''
+    Write-Host 'INSTALL ABORTED' -ForegroundColor Red
+    Write-Host ('  Reason: {0}' -f $Reason) -ForegroundColor Red
+    Write-Host '  Fix the reported cause and run this installer again.' -ForegroundColor Yellow
+    Write-Host '  Nothing after the failing step was modified.' -ForegroundColor DarkGray
     Write-Host ''
 }
 

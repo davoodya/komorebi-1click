@@ -61,17 +61,51 @@ Test-PayloadIntegrity -Payloads $payloads -RepoRoot $RepoRoot
 # ---------------------------------------------------------------------------
 # Install steps. Each one is state-detected and idempotent.
 # ---------------------------------------------------------------------------
+# The components are split into two priority classes:
+#
+#   PRIMARY (Komorebi, WHKD) — the window manager and its hotkey layer. If one
+#     of these fails, the product cannot function at all, so the run aborts
+#     immediately with the failure and its fix shown to the user.
+#
+#   SECONDARY (YASB, AutoHotkey v1/v2) — the status bar and the user scripts.
+#     These are conveniences on top of the WM; a machine without them is still
+#     usable, so a failure here is reported to the user with its fix and the
+#     run CONTINUES to the remaining steps. The user fixes it and re-runs the
+#     installer: everything that already succeeded is detected as installed and
+#     skipped, so only the failed components are reinstalled.
+#
+# Both classes print the same failure report (step, cause, remedy) through
+# Report-InstallerFailure; only the stopping behaviour differs.
 
-$installSteps = @(
-    { Install-Komorebi    -Payload $payloads['komorebi-0.1.41-x86_64.msi'] }
-    { Install-Whkd        -Payload $payloads['whkd-0.2.10-x86_64.msi'] }
-    { Install-Yasb        -Payload $payloads['yasb-2.0.7-x64.msi'] }
-    { Install-AutoHotkeyV1 -Payload $payloads['AutoHotkey.1.1.30.00_setup.exe'] }
-    { Install-AutoHotkeyV2 -Payload $payloads['AutoHotkey_2.0.12_setup.exe'] }
+$primarySteps = @(
+    @{ Name = 'Komorebi';    Action = { Install-Komorebi    -Payload $payloads['komorebi-0.1.41-x86_64.msi'] } }
+    @{ Name = 'WHKD';        Action = { Install-Whkd        -Payload $payloads['whkd-0.2.10-x86_64.msi'] } }
 )
 
-foreach ($step in $installSteps) {
-    & $step
+$secondarySteps = @(
+    @{ Name = 'YASB';         Action = { Install-Yasb         -Payload $payloads['yasb-2.0.7-x64.msi'] } }
+    @{ Name = 'AutoHotkey v1'; Action = { Install-AutoHotkeyV1 -Payload $payloads['AutoHotkey.1.1.30.00_setup.exe'] } }
+    @{ Name = 'AutoHotkey v2'; Action = { Install-AutoHotkeyV2 -Payload $payloads['AutoHotkey_2.0.12_setup.exe'] } }
+)
+
+foreach ($step in $primarySteps) {
+    try {
+        & $step.Action
+    } catch {
+        Report-InstallerFailure -Step "Install $($step.Name)" -ErrorRecord $_
+        Write-InstallerFailureFooter -Reason 'A core window-manager component failed. Komorebi cannot run without it, so the install stopped here.'
+        exit 1
+    }
+}
+
+$secondaryFailures = @()
+foreach ($step in $secondarySteps) {
+    try {
+        & $step.Action
+    } catch {
+        Report-InstallerFailure -Step "Install $($step.Name)" -ErrorRecord $_
+        $secondaryFailures += $step.Name
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -126,5 +160,23 @@ if ($ahkFailed) { exit 4 }
 # ---------------------------------------------------------------------------
 # Done.
 # ---------------------------------------------------------------------------
+
+# A secondary component can have failed without aborting the run. Tell the
+# user what is missing and how to get it, and use a dedicated exit code so an
+# unattended run (the EXE wrapper) can tell "everything" from "usable but
+# incomplete". Re-running this installer reinstalls only those components,
+# because every other step is state-detected and skips itself.
+if ($secondaryFailures.Count) {
+    $list = ($secondaryFailures | Select-Object -Unique) -join ', '
+    Write-Host ''
+    Write-Host '  One or more optional components did not install:' -ForegroundColor Yellow
+    Write-Host "    $list" -ForegroundColor Yellow
+    Write-Host '  The window manager and its hotkeys are installed and working.' -ForegroundColor Green
+    Write-Host '  Fix the reported cause, then run this installer again: every' -ForegroundColor DarkGray
+    Write-Host '  component that succeeded is detected and skipped, so only the' -ForegroundColor DarkGray
+    Write-Host '  failed ones are reinstalled.' -ForegroundColor DarkGray
+    Write-InstallerFooter
+    exit 10
+}
 
 Write-InstallerFooter

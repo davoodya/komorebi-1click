@@ -178,6 +178,64 @@ if ($task) {
     Assert "logon task arguments are 'start --whkd'" ($a.Arguments -eq 'start --whkd')
 }
 
+Section 'T04.1c — komorebi is ELEVATED so it can manage elevated windows'
+# An unelevated window manager cannot manage windows belonging to elevated
+# processes (UAC integrity levels). The installer registers the Komorebi logon
+# task at RunLevel Highest for exactly this reason, and the restart scripts must
+# take the same path - a bare `Start-Process` from a non-elevated shell silently
+# drops every elevated window and the Hermes window out of the layout.
+Add-Type @"
+using System; using System.Runtime.InteropServices;
+public class SandboxTok {
+  [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(int da, bool ih, int pid);
+  [DllImport("advapi32.dll", SetLastError=true)] public static extern bool OpenProcessToken(IntPtr ph, int da, out IntPtr th);
+  [DllImport("advapi32.dll", SetLastError=true)] public static extern bool GetTokenInformation(IntPtr th, int tic, IntPtr ti, int til, out int ril);
+  [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);
+  public static bool IsElevated(int pid) {
+    // 0x1000 = PROCESS_QUERY_LIMITED_INFORMATION. The older
+    // PROCESS_QUERY_INFORMATION mask is denied under UIPI and silently
+    // reports every process as non-elevated.
+    IntPtr p = OpenProcess(0x1000, false, pid); if (p == IntPtr.Zero) return false;
+    IntPtr th; int len;
+    if (!OpenProcessToken(p, 0x0008, out th)) { CloseHandle(p); return false; }
+    IntPtr b = Marshal.AllocHGlobal(4);
+    bool ok = GetTokenInformation(th, 20, b, 4, out len);
+    bool e = ok && Marshal.ReadInt32(b) != 0;
+    Marshal.FreeHGlobal(b); CloseHandle(th); CloseHandle(p); return e;
+  }
+}
+"@
+$k = Get-Process -Name komorebi -ErrorAction SilentlyContinue | Select-Object -First 1
+Assert 'komorebi is running after the restart' ($null -ne $k)
+if ($k) { Assert 'komorebi runs elevated (can manage elevated windows)' ([SandboxTok]::IsElevated($k.Id)) }
+
+Section 'T04.1e — restart-whkd.ps1 restarts through the elevated task'
+# restart-whkd.ps1 used to relaunch whkd.exe directly, which produced an
+# unpaired whkd and killed every hotkey. It now stops the pair through
+# `komorebic stop --whkd` and starts it again via the RunLevel Highest
+# `Komorebi` logon task, so the new komorebi is elevated and owns its whkd
+# child. This test checks the mechanism is present in the shipped script -
+# a regression to a bare Start-Process would reintroduce the silent hotkey
+# loss AND the elevated-window dropout at the same time.
+$src = Get-Content "$Repo\scripts\restart-whkd.ps1" -Raw
+Assert 'restart-whkd stops via komorebic stop --whkd' ($src -match 'stop --whkd')
+Assert 'restart-whkd starts komorebi via the elevated logon task' ($src -match "Start-ScheduledTask -TaskName 'Komorebi'")
+Assert 'restart-whkd verifies the pairing after restart' ($src -match 'Test-WhkdPaired')
+Assert 'restart-whkd exits non-zero when the pairing is broken' ($src -match 'exit 2')
+
+Section 'T04.1d — secondary install failures do not abort the installer'
+# The installer splits its payloads into two classes. Komorebi and WHKD are
+# primary: a failure there aborts the run. YASB and AutoHotkey are secondary:
+# a failure is reported with its cause and remedy and the run CONTINUES, so the
+# machine still ends up with a working window manager. Re-running the installer
+# reinstalls only the failed components, because every step is state-detected
+# and skips what is already installed.
+$src = Get-Content "$Repo\Install.ps1" -Raw
+Assert 'Install.ps1 stops on a primary (Komorebi/WHKD) failure' ($src -match 'foreach \(\$step in \$primarySteps\)')
+Assert 'Install.ps1 continues past a secondary (YASB/AutoHotkey) failure' ($src -match 'foreach \(\$step in \$secondarySteps\)')
+Assert 'secondary failures are collected, not thrown' ($src -match '\$secondaryFailures \+= \$step\.Name')
+Assert 'the user is told which secondary components are missing' ($src -match 'One or more optional components did not install')
+
 Section 'T04.1b — whkd is PAIRED with komorebi (hotkeys actually live)'
 # A whkd that is alive but was NOT spawned by `komorebic start --whkd` registers
 # every hotkey and then drops every command — the WM looks perfectly healthy

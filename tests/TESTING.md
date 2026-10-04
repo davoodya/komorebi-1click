@@ -75,6 +75,26 @@ spawned by `komorebic start --whkd` silently drops every hotkey while the rest
 of the WM looks healthy — this is the exact regression the postmortem
 (`docs/POSTMORTEM-20261004-whkd-pairing.md`) was written for.
 
+**T04.1c — komorebi is ELEVATED (new, 2026-10-04):** asserts the running
+komorebi holds an elevated token. An unelevated window manager cannot manage
+elevated windows or the Hermes window, and the reference account is not an
+Administrator, so the only reliable path to an elevated komorebi is the
+`Komorebi` logon task at RunLevel Highest. The probe uses
+`PROCESS_QUERY_LIMITED_INFORMATION` (0x1000) — the older
+`PROCESS_QUERY_INFORMATION` mask is denied under UIPI and silently reports
+every process as non-elevated.
+
+**T04.1d — secondary install failures do not abort (new, 2026-10-04):** four
+source-level assertions that `Install.ps1` splits its payloads into a primary
+group (Komorebi, WHKD) that aborts the run on failure and a secondary group
+(YASB, AutoHotkey) that reports the failure and continues. See
+`docs/INSTALL-FAILURE-HANDLING.md`.
+
+**T04.1e — restart-whkd goes through the elevated task (new, 2026-10-04):**
+asserts `restart-whkd.ps1` stops via `komorebic stop --whkd`, starts via
+`Start-ScheduledTask -TaskName 'Komorebi'`, and verifies the pairing
+afterwards, exiting non-zero when it is broken.
+
 **T04.1–T04.4 — startup machinery (ticket 04):** the `Komorebi` logon task exists at
 `RunLevel Highest` with a logon trigger running `komorebic.exe start --whkd`; the
 `KomorebiWatchdog` task exists at `RunLevel Highest`, repeats every 5 minutes, invokes

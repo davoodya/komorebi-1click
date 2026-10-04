@@ -16,7 +16,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet('install', 'uninstall', 'start', 'restart', 'status', 'retile', 'watchdog')]
+    [ValidateSet('install', 'uninstall', 'start', 'stop', 'restart', 'status', 'retile', 'watchdog')]
     [string] $Action = 'status',
 
     [ValidateRange(1, 120)]
@@ -508,6 +508,22 @@ switch ($Action) {
 
     'status' {
         Show-Status | Out-Null
+    }
+
+    # Stop-only, no restart. Used by safe-restart.ps1 when this shell is NOT
+    # elevated: it stops the pair here and then triggers the RunLevel Highest
+    # `Komorebi` logon task to bring it back elevated. Starting komorebi from
+    # this branch on a non-admin account would relaunch it unelevated, and an
+    # unelevated window manager cannot manage elevated windows.
+    'stop' {
+        try { & $KomorebiExe stop --whkd 2>$null | Out-Null } catch { }
+        Get-Process -Name komorebi, whkd -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+        Remove-Item $SockFile -Force -ErrorAction SilentlyContinue
+        Remove-Item $HwndFile -Force -ErrorAction SilentlyContinue
+        Write-Host '  komorebi + whkd stopped. Start them again with the Komorebi' -ForegroundColor DarkGray
+        Write-Host '  logon task (elevated) or `komorebic start --whkd`.' -ForegroundColor DarkGray
     }
 
     'start'   { if (Start-Komorebi) { Show-Status | Out-Null } else { Write-Host '  FAILED to start' -ForegroundColor Red } }
