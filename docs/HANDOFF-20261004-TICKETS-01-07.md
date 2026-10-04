@@ -37,9 +37,8 @@ truth for *what runs*. Test files are written in dev and copied across.
 | 04 | startup tasks | ✅ done (commit 887db72) |
 | 05 | AutoHotkey integration (AppRunner.vbs) | ✅ done (commit 92e1e90) |
 | 06 | management-script portability | ✅ done (commit 0064b36) |
-| 03-f | dead whkdrc hotkeys (follow-up) | ✅ done (commit c0ca4d0) |
 | 07 | export / import ZIP | ✅ done (commit c0ca4d0) |
-| 08 | AHK lifecycle scripts | ready (blocked by nothing real) |
+| 08 | AutoHotkey lifecycle scripts | ✅ done (commit `PEND`) |
 | 09 | EXE wrapper (csc) | ready |
 | 10–13 | Dashboard (shell, threading, theme, publish) | blocked by 10's own chain |
 | 14 | verification harness (Windows Sandbox) | blocked by 09 + 13 |
@@ -79,6 +78,42 @@ Tickets 05, 06, 07 have all acceptance boxes ticked in their issue files.
   imports another machine's resize offsets. Import always backs the live config up to a
   timestamped `pre-import-backup-*` directory, stops the WM, restores, and starts it
   again.
+
+### Ticket 08 — AutoHotkey lifecycle (this session)
+
+AutoHotkey became a first-class part of the environment. Four new scripts plus
+four `.bat` wrappers, all path-portable and all composing with `common.ps1`:
+
+| Script | Does |
+|---|---|
+| `ahk-script.ps1` | Enable or disable ONE script by name; `-List` shows the state |
+| `ahk-toggle.ps1` | Flip all three to the same state at once |
+| `ahk-uninstall.ps1` | Remove both AutoHotkey versions by product code |
+| `ahk-cleanup.ps1` | Remove the Startup VBS, the state file, and any repo-script process |
+
+The enable/disable mechanism:
+
+- State lives in `autohotkey\ahk-state.json`, not in the VBS. The VBS is a
+  derived artifact, regenerated from the state every time.
+- A disabled script renders as a **commented-out** `RunHidden` line with a
+  `[disabled:<name>]` marker, so its position in the file is stable across
+  enable/disable cycles.
+- After the VBS is regenerated, the affected process is killed (disable) or
+  started (enable) immediately — no logoff required.
+- `Install-AutoHotkeyStartup` calls `Apply-AhkEnabledState` before rendering,
+  so a re-install preserves what the user toggled off.
+
+**Containment is critical here.** The scripts match processes on the `.ahk`
+path **under this repo's `autohotkey\` directory**, never on the process name
+or the file name alone. Every v1 script appears in the process list as
+`AutoHotkey`, and the user runs personal scripts from `H:\Repo\Auto-HotKey\`
+that must never be touched — a name-only match would kill those too. Only the
+repo-relative path is unique.
+
+`tests/ticket08-ahk.tests.ps1`: 17 assertions, all green, run against a
+sandbox copy so the real Startup folder and the real processes stay untouched.
+Verified the test run leaves the live machine unchanged: 3 AHK processes
+before and after, Startup VBS intact.
 
 ### The ticket-03 follow-up (Davood's spec, this session)
 Three whkdrc hotkeys pointed at files the installer never shipped. Fixed properly:

@@ -95,6 +95,14 @@ asserts `restart-whkd.ps1` stops via `komorebic stop --whkd`, starts via
 `Start-ScheduledTask -TaskName 'Komorebi'`, and verifies the pairing
 afterwards, exiting non-zero when it is broken.
 
+**Ticket 08 — `tests/ticket08-ahk.tests.ps1` (new, 2026-10-04):** 17 assertions
+covering the AutoHotkey lifecycle. State defaults, a disabled script rendering
+as a commented-out VBS line with the `[disabled:<name>]` marker, the
+persist-and-regenerate round-trip, degradation to defaults on a corrupt state
+file, path-portability of the four new scripts, clean parsing, and cleanup
+removing the leftovers. Runs entirely against a sandbox copy; containment is
+verified after every run (3 AHK processes, Startup VBS intact).
+
 **T04.1–T04.4 — startup machinery (ticket 04):** the `Komorebi` logon task exists at
 `RunLevel Highest` with a logon trigger running `komorebic.exe start --whkd`; the
 `KomorebiWatchdog` task exists at `RunLevel Highest`, repeats every 5 minutes, invokes

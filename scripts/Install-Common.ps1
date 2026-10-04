@@ -1159,6 +1159,110 @@ function Get-AppRunnerTemplate {
     return $template
 }
 
+<#
+.SYNOPSIS
+    The path to the enable/disable state file for the AutoHotkey scripts.
+
+.DESCRIPTION
+    One JSON file in the repo's autohotkey\ directory holds which of the three
+    shipped scripts are currently enabled. The generated AppRunner.vbs is a
+    derived artifact: it is rewritten from this state every time a script is
+    toggled, so the VBS is never edited by hand and never drifts. Keeping the
+    state in the repo (not in .config) means it travels with the repo and the
+    installer's idempotency check sees it on a re-run.
+#>
+function Get-AhkStateFile {
+    param([Parameter(Mandatory)][string]$RepoRoot)
+    return (Join-Path $RepoRoot 'autohotkey\ahk-state.json')
+}
+
+<#
+.SYNOPSIS
+    Reads the enable/disable state, layered over the defaults.
+#>
+function Get-AhkEnabledState {
+    param([Parameter(Mandatory)][string]$RepoRoot)
+
+    # Default: everything enabled. Start from the manifest so a state file that
+    # predates a newly shipped script does not disable it by absence.
+    $state = @{}
+    foreach ($script in $script:AutoHotkeyScripts) { $state[$script.Name] = $true }
+
+    $file = Get-AhkStateFile -RepoRoot $RepoRoot
+    if (Test-Path -LiteralPath $file) {
+        try {
+            $saved = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
+            # Only names that still exist in the manifest are honoured; a name
+            # that was removed from the repo is ignored, not carried forever.
+            foreach ($name in $saved.PSObject.Properties.Name) {
+                $known = @($script:AutoHotkeyScripts | Where-Object { $_.Name -ieq $name })
+                if ($known.Count -eq 1) {
+                    $val = $saved.$name
+                    if ($val -is [bool]) { $state[$known[0].Name] = $val }
+                }
+            }
+        } catch {
+            # A corrupt state file must never break the installer. Fall back to
+            # the defaults and note it, so the user still gets a working setup.
+            Write-Host '  ahk-state.json could not be read; using defaults (all enabled)' -ForegroundColor Yellow
+        }
+    }
+    return $state
+}
+
+<#
+.SYNOPSIS
+    Writes the enable/disable state and regenerates AppRunner.vbs to match.
+#>
+function Set-AhkEnabledState {
+    param(
+        [Parameter(Mandatory)][string]$RepoRoot,
+        [Parameter(Mandatory)][hashtable]$State,
+        # Internal: used by the test suite to redirect the Startup VBS into a
+        # sandbox so a test run never touches the real Startup folder.
+        [string] $StartupDirOverride
+    )
+
+    $file = Get-AhkStateFile -RepoRoot $RepoRoot
+    $dir  = Split-Path $file -Parent
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+
+    # Write with an ordered object so the file is stable and diffable.
+    $ordered = [ordered]@{}
+    foreach ($script in $script:AutoHotkeyScripts) {
+        $name = $script.Name
+        $ordered[$name] = [bool]$State[$name]
+    }
+    $ordered | ConvertTo-Json | Set-Content -LiteralPath $file -Encoding UTF8
+
+    # Regenerate the Startup VBS so the change takes effect at the next logon.
+    $template = Get-AppRunnerTemplate -RepoRoot $RepoRoot
+    if ($StartupDirOverride) {
+        $output = Join-Path $StartupDirOverride 'AppRunner.vbs'
+    } else {
+        $output = Join-Path ([Environment]::GetFolderPath('Startup')) 'AppRunner.vbs'
+    }
+    $ahkDir   = Join-Path $RepoRoot 'autohotkey'
+    New-AppRunnerVbs -TemplatePath $template -OutputPath $output -AhkDir $ahkDir
+}
+
+<#
+.SYNOPSIS
+    Copies the persisted state onto the in-memory manifest so the VBS
+    generator sees the current Enabled flags.
+#>
+function Apply-AhkEnabledState {
+    param([Parameter(Mandatory)][string]$RepoRoot)
+
+    $state = Get-AhkEnabledState -RepoRoot $RepoRoot
+    for ($i = 0; $i -lt $script:AutoHotkeyScripts.Count; $i++) {
+        $name = $script:AutoHotkeyScripts[$i].Name
+        if ($state.ContainsKey($name)) {
+            $script:AutoHotkeyScripts[$i]['Enabled'] = [bool]$state[$name]
+        }
+    }
+}
+
 function Test-AppRunnerUpToDate {
     # True when the Startup copy already holds exactly the lines this machine
     # and this repo produce, so a re-run regenerates nothing. This compares the
@@ -1195,7 +1299,20 @@ function Get-GeneratedAppRunnerContent {
         # is quoted with "" (an escaped quote) inside it, and the trailing """
         # closes the string. Both paths are quoted because the repository path
         # can contain spaces; a bare unquoted path would break the Run call.
-        $lines += 'RunHidden """{0}"" ""{1}"""' -f $interpreter, $scriptPath
+        $run = 'RunHidden """{0}"" ""{1}"""' -f $interpreter, $scriptPath
+
+        # A disabled script is emitted as a COMMENTED-OUT line, not omitted.
+        # That keeps the script's position in the file stable across
+        # enable/disable cycles and shows the user at a glance what is off.
+        # The comment marker is the script's Name so the enable/disable
+        # machinery can find its own line back without parsing quotes.
+        $isEnabled = $true
+        if ($script.ContainsKey('Enabled')) { $isEnabled = [bool]$script.Enabled }
+        if ($isEnabled) {
+            $lines += $run
+        } else {
+            $lines += "' [disabled:{0}] {1}" -f $script.Name, $run
+        }
     }
 
     # Insert the generated block at the marker line. The marker is replaced
@@ -1264,6 +1381,11 @@ function Install-AutoHotkeyStartup {
             -Remedy 'Re-clone or re-extract this repository so autohotkey\ contains all three scripts.'
         throw 'AutoHotkey scripts are missing from the repository'
     }
+
+    # Layer the persisted enable/disable state onto the manifest BEFORE the VBS
+    # is rendered, so a re-install preserves what the user toggled off. Without
+    # this the installer would silently re-enable everything.
+    Apply-AhkEnabledState -RepoRoot $RepoRoot
 
     # --- generate the startup launcher ---------------------------------------
     $template = Get-AppRunnerTemplate -RepoRoot $RepoRoot

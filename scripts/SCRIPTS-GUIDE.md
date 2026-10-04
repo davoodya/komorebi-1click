@@ -101,6 +101,23 @@
 |---|---|
 | `UNINSTALL-KOMOREBI-WHKD.bat` | **komorebi + whkd (نرم‌افزار) را حذف می‌کند.** scheduled taskها را برمی‌دارد، processها را stop می‌کند، و از طریق MSI uninstallentries پکیج‌ها را حذف می‌کند (winget روی این ماشین hangs). **کانفیگ‌ها دست نخورده باقی می‌مانند.** موتور: `uninstall-komorebi-whkd.ps1`. |
 | `CLEANUP-KOMOREBI-WHKD.bat` | **بعد از UNINSTALL اجرا کن.** هر trace باقی‌مانده را پاک می‌کند: install directories، config files، state و logs، helper binaries، و PATH entries. ابتدا یک safety copy از کانفیگ‌ها کنار خود اسکریپت می‌نویسد و کلمه‌ی `DELETE` را می‌خواهد. موتور: `cleanup-komorebi-whkd.ps1`. |
+| `AHK-UNINSTALL.bat` | **AutoHotkey v1 و v2 (نرم‌افزار) را حذف می‌کند.** interpreter processها را stop می‌کند، MSI uninstall را اجرا می‌کند، و `AppRunner.vbs` تولیدشده را از Startup برمی‌دارد. **اسکریپت‌های `.ahk` در repository دست نخورده می‌مانند.** موتور: `ahk-uninstall.ps1`. |
+| `AHK-CLEANUP.bat` | **بعد از UNINSTALL اجرا کن.** leftover‌های فضای کاربر را پاک می‌کند: `AppRunner.vbs` تولیدشده، فایل وضعیت enable/disable، و هر process در حال اجرای یکی از اسکریپت‌های این repo. **interpreterها را حذف نمی‌کند.** موتور: `ahk-cleanup.ps1`. |
+
+---
+
+## ۶ب. AutoHotkey lifecycle (تیکت ۰۸)
+
+این چهار اسکریپت AutoHotkey را به یک بخش first-class از محیط تبدیل می‌کنند:
+
+| اسکریپت | کارکرد |
+|---|---|
+| `AHK-SCRIPT.bat` | **یک اسکریپت را enable/disable می‌کند.** بدون آرگومان: لیست سه اسکریپت همراه با وضعیت فعلی. با آرگومان: `AHK-SCRIPT.bat NewFile disabled` خط مربوطه را در `AppRunner.vbs` کامنت می‌کند، process را فوراً kill می‌کند، و state را در `autohotkey\ahk-state.json` ذخیره می‌کند تا در logon بعدی هم off بماند. موتور: `ahk-script.ps1`. |
+| `AHK-TOGGLE-ALL.bat` | **همه‌ی سه اسکریپت را یکجا روشن یا خاموش می‌کند.** `AHK-TOGGLE-ALL.bat disabled` هر سه را disable می‌کند. موتور: `ahk-toggle.ps1`. |
+| `AHK-CLEANUP.bat` | leftover‌ها (همان ردیف بالا). |
+| `AHK-UNINSTALL.bat` | uninstall (همان ردیف بالا). |
+
+**نکته‌ی مهم:** این اسکریپت‌ها فقط اسکریپت‌های موجود در `autohotkey\` همین repository را مدیریت می‌کنند. هر اسکریپت AutoHotkey که کاربر از مسیر دیگری اجرا می‌کند کاملاً دست‌نخورده باقی می‌ماند — حتی اگر هم‌نام باشد.
 
 ---
 
