@@ -58,8 +58,13 @@ try {
     $s = (& 'C:\Progra~1\komorebi\bin\komorebic.exe' state | Out-String) | ConvertFrom-Json
     foreach ($m in $s.monitors.elements) {
         $z  = $m.size
-        $wd = [int]$z.right - [int]$z.left
-        $ht = [int]$z.bottom - [int]$z.top
+        # `komorebic state` puts the monitor WIDTH/HEIGHT in `right`/`bottom`,
+        # not the far edge. Subtracting `left`/`top` from them yields nonsense on
+        # every offset monitor (e.g. left=1920, right=1080 => -840). Use the
+        # fields as the sizes they are. See display-diag output below for the
+        # raw values to confirm.
+        $wd = [int]$z.right
+        $ht = [int]$z.bottom
         $flag = if ($wd -le 0 -or $ht -le 0) { '   <<< INVALID' } else { '' }
         Write-Host ("  {0}  left={1} top={2} right={3} bottom={4}  => {5}x{6}{7}" -f `
             $m.name, $z.left, $z.top, $z.right, $z.bottom, $wd, $ht, $flag)

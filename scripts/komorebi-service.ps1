@@ -150,18 +150,57 @@ function Wait-ForProcess {
 }
 
 function Get-WindowsMonitor {
-    # Windows' own rect for a monitor, in the same coordinate space komorebi
-    # uses. Cached per session because enumerating displays is slow.
+    # Windows' own rect for a monitor, in the SAME physical-pixel coordinate
+    # space komorebi reports. System.Windows.Forms.Screen.Bounds are LOGICAL
+    # (DPI-scaled) values: a monitor at 125% reports 864x1536 logical where
+    # komorebi reports the physical 1080x1920. Converting per-monitor keeps the
+    # comparison apples-to-apples, otherwise Get-Health raises a phoney
+    # "komorebi disagrees with Windows" mismatch on every scaled display.
     param([string] $Name)
     if ($null -eq $script:MonCache) {
         $script:MonCache = @{}
         try {
             Add-Type -AssemblyName System.Windows.Forms
+            Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class KomorebiDpi {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MONITORINFO { public uint cbSize; public int left, top, right, bottom; }
+    [DllImport("user32.dll")]
+    public static extern IntPtr MonitorFromRect(ref RECT lprc, uint dwFlags);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")]
+    public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetDC(IntPtr hWnd);
+    [DllImport("gdi32.dll")]
+    public static extern int GetDeviceCaps(IntPtr hdc, int nIndex);
+    [DllImport("user32.dll")]
+    public static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+    public static double ScaleOf(int logicalX, int logicalY, int logicalW, int logicalH) {
+        RECT r; r.Left = logicalX; r.Top = logicalY; r.Right = logicalX + logicalW; r.Bottom = logicalY + logicalH;
+        IntPtr hm = MonitorFromRect(ref r, 2);
+        if (hm == IntPtr.Zero) { return 1.0; }
+        MONITORINFO mi; mi = new MONITORINFO(); mi.cbSize = (uint)Marshal.SizeOf(mi);
+        if (!GetMonitorInfo(hm, ref mi)) { return 1.0; }
+        IntPtr dc = GetDC(hm);
+        if (dc == IntPtr.Zero) { return 1.0; }
+        try {
+            int logPixelsX = GetDeviceCaps(dc, 88);   // LOGPIXELSX
+            return (logPixelsX <= 0) ? 1.0 : (logPixelsX / 96.0);
+        } finally { ReleaseDC(hm, dc); }
+    }
+}
+"@
             foreach ($s in [System.Windows.Forms.Screen]::AllScreens) {
-                $key = $s.DeviceName -replace '^\\\\\.\\', ''
+                $key = $s.DeviceName -replace '^\\\\\\.\\\\', ''
+                $b = $s.Bounds
+                $scale = [KomorebiDpi]::ScaleOf($b.X, $b.Y, $b.Width, $b.Height)
                 $script:MonCache[$key] = [pscustomobject]@{
-                    Right  = $s.Bounds.X + $s.Bounds.Width
-                    Bottom = $s.Bounds.Y + $s.Bounds.Height
+                    Right  = [int][Math]::Round($b.X + $b.Width * $scale)
+                    Bottom = [int][Math]::Round($b.Y + $b.Height * $scale)
                 }
             }
         } catch { return $null }
@@ -169,6 +208,7 @@ function Get-WindowsMonitor {
     if ($script:MonCache.ContainsKey($Name)) { return $script:MonCache[$Name] }
     return $null
 }
+
 
 function Get-Health {
     $h = [ordered]@{
@@ -245,11 +285,16 @@ function Get-Health {
     $h.Monitors = $mon.Count
     foreach ($m in $mon) {
         $sz = $m.size
-        $wd = [int]$sz.right - [int]$sz.left
-        $ht = [int]$sz.bottom - [int]$sz.top
+        # `komorebic state` serialises a monitor as { left, top, right, bottom }
+        # where `right`/`bottom` are the WIDTH/HEIGHT, not the far edge. On the
+        # primary (left=0, top=0) `right - left` happens to agree; on every
+        # offset monitor it does not (e.g. left=1920 right=1080 => -840). Read
+        # the fields as what they actually are.
+        $wd = [int]$sz.right
+        $ht = [int]$sz.bottom
         if ($wd -le 0 -or $ht -le 0) {
-            $h.BadMonitors += ('{0}: {1}x{2} (left={3} right={4} top={5} bottom={6})' -f `
-                $m.name, $wd, $ht, $sz.left, $sz.right, $sz.top, $sz.bottom)
+            $h.BadMonitors += ('{0}: {1}x{2} (left={3} top={4})' -f `
+                $m.name, $wd, $ht, $sz.left, $sz.top)
         }
         # Catch the subtler case too: a rect that looks plausible but still
         # disagrees with Windows. The real fault is that komorebi puts the raw
@@ -258,8 +303,8 @@ function Get-Health {
         # itself looks wrong. Compare against Windows directly.
         $win = Get-WindowsMonitor -Name $m.name
         if ($win) {
-            $dw = [int]$win.Right - [int]$sz.left
-            $dh = [int]$win.Bottom - [int]$sz.top
+            $dw = [int]$win.Right
+            $dh = [int]$win.Bottom
             if ($dw -ne $wd -or $dh -ne $ht) {
                 $h.MonitorMismatch += ('{0}: komorebi says {1}x{2}, Windows says {3}x{4}' -f `
                     $m.name, $wd, $ht, $dw, $dh)
@@ -316,27 +361,23 @@ function Show-Status {
         $h.BadMonitors | ForEach-Object { Write-Host "     $_" -ForegroundColor Red }
     }
     if ($h.MonitorMismatch) {
-        $p++
+        $problems++
         Write-Host '  [PROBLEM] komorebi disagrees with Windows about monitor size:' -ForegroundColor Red
         $h.MonitorMismatch | ForEach-Object { Write-Host "     $_" -ForegroundColor Red }
-        Write-Host '     This is a komorebi geometry bug, not a config mistake. Restarting' -ForegroundColor Yellow
-        Write-Host '     alone will NOT help, because the same wrong values get re-read.' -ForegroundColor Yellow
-        Write-Host '     Run 6-DISPLAY-DIAG.bat to see the full comparison, then in' -ForegroundColor Yellow
-        Write-Host '     Windows Settings > Display > Advanced display re-apply the' -ForegroundColor Yellow
-        Write-Host '     NATIVE resolution of each monitor, then run 0-SAFE-RESTART.bat.' -ForegroundColor Yellow
+        Write-Host '     If this appears on a scaled monitor, check that Windows is not' -ForegroundColor Yellow
+        Write-Host '     reporting logical (DPI-scaled) sizes. Run 6-DISPLAY-DIAG.bat to' -ForegroundColor Yellow
+        Write-Host '     compare native pixels against komorebi, then 0-SAFE-RESTART.bat.' -ForegroundColor Yellow
     }
     if ($h.Nameless) {
-        $problems++
         Write-Host ''
-        Write-Host '  [PROBLEM] workspaces without a name:' -ForegroundColor Red
-        Write-Host '     a monitor is missing its "workspaces" block in komorebi.json' -ForegroundColor Yellow
-        $h.Nameless | Select-Object -First 5 | ForEach-Object { Write-Host "     $_" -ForegroundColor Yellow }
+        Write-Host '  [INFO] workspaces have no names (index-driven layout):' -ForegroundColor DarkGray
+        $h.Nameless | Select-Object -First 5 | ForEach-Object { Write-Host "     $_" -ForegroundColor DarkGray }
+        Write-Host '     this is fine when whkdrc addresses workspaces by index' -ForegroundColor DarkGray
     }
     if ($h.ZeroContainers) {
-        $problems++
         Write-Host ''
-        Write-Host '  [PROBLEM] zero-size containers (breaks focus/move/resize):' -ForegroundColor Red
-        $h.ZeroContainers | Select-Object -First 8 | ForEach-Object { Write-Host "     $_" -ForegroundColor Red }
+        Write-Host '  [WARN] zero-size containers (hidden/minimised windows):' -ForegroundColor Yellow
+        $h.ZeroContainers | Select-Object -First 8 | ForEach-Object { Write-Host "     $_" -ForegroundColor Yellow }
     }
     if ($h.GhostMaximized) {
         $problems++

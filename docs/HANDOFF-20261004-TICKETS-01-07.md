@@ -39,7 +39,7 @@ truth for *what runs*. Test files are written in dev and copied across.
 | 06 | management-script portability | ✅ done (commit 0064b36) |
 | 07 | export / import ZIP | ✅ done (commit c0ca4d0) |
 | 08 | AutoHotkey lifecycle scripts | ✅ done (commit 5ae504f) |
-| 09 | EXE wrapper (csc) | ready |
+| 09 | EXE wrapper (csc) | next |
 | 10–13 | Dashboard (shell, threading, theme, publish) | blocked by 10's own chain |
 | 14 | verification harness (Windows Sandbox) | blocked by 09 + 13 |
 
@@ -218,10 +218,55 @@ the Sandbox.
   (it is the rewriter's pattern); the test suite asserts the *behaviour* instead of
   banning the string.
 
+### Ticket 09 — EXE wrapper — NEXT
+
+The next ticket to implement. Per the discussion above, the monitor-geometry
+fix and this ticket are independent: geometry is done, this is the next unit of
+work. Read the issue file at
+`~/projects/komorebi-1click/.scratch/komorebi-1click-installer/issues/09-exe-wrapper.md`.
+
+### Monitor geometry fix (this session, ticket-independent)
+
+`4-STATUS.bat` reported `DEGRADED (3 problem(s))` on a machine where Komorebi,
+WHKD and every hotkey worked perfectly. Three defects, all in the health check,
+not in the environment. Full write-up: `docs/MONITOR-GEOMETRY.md`.
+
+1. **`komorebic state` puts the monitor width/height in `right`/`bottom`, not
+   the far edge.** `Get-Health` computed `right - left`, which only agrees on a
+   monitor at the origin. On the reference machine it produced **-840** for the
+   portrait monitor (`1080 - 1920`) and the "monitor geometry is invalid"
+   problem. Fixed by reading the fields as the sizes they are. The same
+   misreading was in `display-diag.ps1` (the script the old error message
+   pointed users at).
+2. **WinForms `Screen.Bounds` are logical, komorebi reports physical.** The
+   125% monitor reported 864x1536 where komorebi reported 1920x1080, so the
+   "komorebi disagrees with Windows" mismatch fired on every scaled display.
+   `Get-WindowsMonitor` now converts per-monitor DPI (P/Invoke through the
+   monitor's own DC, not the system DPI, which is wrong in any per-monitor-DPI
+   setup).
+3. **`$p++` instead of `$problems++`** in the mismatch branch, so a real
+   mismatch never counted towards the verdict at all.
+
+Also demoted two non-faults that were inflating the problem count: unnamed
+workspaces (this config addresses workspaces **by index**, so empty names are
+the design, not a missing block) and zero-size containers (`komorebic state`
+reports 0x0 for hidden/minimised windows — Sticky Notes, Phone Link, Settings —
+which is normal). The misleading remediation text that told the user to re-apply
+native resolution was replaced.
+
+Verified on the live machine: `VERDICT: HEALTHY`, `BadMonitors=0`,
+`MonitorMismatch=0`, 3 monitors, 12 tiled windows, whkd paired, 119 bindings —
+with the process/socket/pairing lines unchanged. Also verified under Windows
+PowerShell 5.1 (the installer targets the inbox shell). Regression tests:
+`tests/ticket-monitor.tests.ps1`, 12 assertions, exit 0.
+
 ## 9. Where to start next
 
-1. **Ticket 08** (AHK lifecycle scripts) — the AppRunner enable/disable mechanism is
-   already anticipated by `$script:AutoHotkeyScripts` having an `Enabled` slot.
-2. **Ticket 09** (EXE wrapper) unblocks 14.
-3. **A Sandbox run** of the full suite would clear the "awaits a Sandbox run" column for
-   tickets 02–07 in one shot.
+1. **Ticket 09** (EXE wrapper, `csc`) — the issue file is at
+   `~/projects/komorebi-1click/.scratch/komorebi-1click-installer/issues/09-exe-wrapper.md`.
+   A thin single-file C# wrapper that locates `Install.ps1` next to itself,
+   relaunches itself elevated, and forwards the exit code. It is the only thing
+   blocking ticket 14 (the Windows Sandbox verification harness).
+2. **Ticket 08** is done (AHK lifecycle scripts) — the AppRunner enable/disable
+   mechanism is already anticipated by `$script:AutoHotkeyScripts` having an
+   `Enabled` slot. Nothing left there.

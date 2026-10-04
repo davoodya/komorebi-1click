@@ -96,7 +96,14 @@ asserts `restart-whkd.ps1` stops via `komorebic stop --whkd`, starts via
 afterwards, exiting non-zero when it is broken.
 
 **Ticket 08 — `tests/ticket08-ahk.tests.ps1` (new, 2026-10-04):** 17 assertions
-covering the AutoHotkey lifecycle. State defaults, a disabled script rendering
+
+**Ticket 09 — `tests/ticket-monitor.tests.ps1` (new, 2026-10-04):** 12 assertions.
+Static geometry regression tests. Feeds synthetic `komorebic state` objects
+through the shipped size comparison to prove the width/height reading and the
+125% logical-to-physical DPI conversion, and that a genuinely broken monitor
+and a real Windows disagreement are still flagged. Exit 0.
+
+**Ticket 08 continued:** covering the AutoHotkey lifecycle. State defaults, a disabled script rendering
 as a commented-out VBS line with the `[disabled:<name>]` marker, the
 persist-and-regenerate round-trip, degradation to defaults on a corrupt state
 file, path-portability of the four new scripts, clean parsing, and cleanup
