@@ -93,6 +93,7 @@ try {
         Say "  watchdog frozen for the restart window" 'DarkGray'
     }
 } catch { Say "  could not touch the watchdog task: $($_.Exception.Message)" 'Yellow' }
+try {
 
 # ── 3. restart via the mutex-protected service script ────────────────────
 # Run it IN THIS PROCESS. Spawning a nested powershell.exe makes the child
@@ -129,7 +130,109 @@ if ($elevated) {
     }
 }
 
-# ── 4. restore the watchdog ──────────────────────────────────────────────
+# ── 4. re-adopt pre-existing windows (fixes Hermes + Task Manager + admin consoles)
+#
+# When komorebi restarts it only attaches its window hook to windows created AFTER
+# it started. Windows that already existed (Hermes Desktop, Task Manager launched
+# from an elevated shell, the Administrator: consoles) are left unmanaged even
+# though they match a manage_rule and komorebi can see them. `komorebic manage`
+# re-adopts them, so after a restart we sweep the visible windows that komorebi is
+# not yet managing and adopt each one.
+function Invoke-WindowRehook {
+    if (-not (Test-Path $KomorebiExe)) { return }
+    Add-Type -Name 'KmrRehook' -Namespace 'Win32' -ErrorAction SilentlyContinue -MemberDefinition @"
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool IsWindowVisible(System.IntPtr h);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool IsIconic(System.IntPtr h);
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        public static extern int GetWindowText(System.IntPtr h, System.Text.StringBuilder s, int n);
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        public static extern int GetClassName(System.IntPtr h, System.Text.StringBuilder s, int n);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern System.IntPtr GetWindowThreadProcessId(System.IntPtr h, out uint pid);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool SetForegroundWindow(System.IntPtr h);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool EnumWindows(EnumWindowsProc p, System.IntPtr l);
+        public delegate bool EnumWindowsProc(System.IntPtr h, System.IntPtr l);
+"@ -ErrorAction SilentlyContinue
+
+    if (-not ('Win32.KmrRehook' -as [type])) {
+        Say '  window re-hook skipped: could not load the Win32 enumeration helpers' 'Yellow'
+        return
+    }
+
+    $managed = @{}
+    try {
+        $s = (& $KomorebiExe state) | ConvertFrom-Json
+        foreach ($m in $s.monitors.elements) {
+            foreach ($ws in $m.workspaces.elements) {
+                foreach ($c in @($ws.containers.elements)) {
+                    foreach ($w in @($c.windows.elements)) { if ($w.hwnd) { $managed[[int64]$w.hwnd] = $true } }
+                }
+                foreach ($fw in @($ws.floating_windows.elements)) { if ($fw.hwnd) { $managed[[int64]$fw.hwnd] = $true } }
+            }
+        }
+    } catch { Say "  window re-hook skipped: could not read state: $($_.Exception.Message)" 'Yellow'; return }
+
+    $candidates = New-Object System.Collections.Generic.List[object]
+    $enumCb = [Win32.KmrRehook+EnumWindowsProc]{
+        param($h, $l)
+        if (-not [Win32.KmrRehook]::IsWindowVisible($h)) { return $true }
+        if ([Win32.KmrRehook]::IsIconic($h)) { return $true }
+        $sb = New-Object System.Text.StringBuilder 200
+        if ([Win32.KmrRehook]::GetWindowText($h, $sb, 200) -eq 0) { return $true }
+        $title = $sb.ToString()
+        $cls = New-Object System.Text.StringBuilder 200
+        [Win32.KmrRehook]::GetClassName($h, $cls, 200) | Out-Null
+        $pid = 0
+        [Win32.KmrRehook]::GetWindowThreadProcessId($h, [ref]$pid) | Out-Null
+        # Shell UI chrome, bars and gadgets that must stay unmanaged.
+        $clsName = $cls.ToString()
+        if ($clsName -eq 'Progman' -or
+            $clsName -eq 'YasbBar' -or $clsName -like 'Qt6102QWindowToolSaveBits' -or
+            $clsName -like 'RainmeterMeterWindow' -or
+            $clsName -like 'komoborder-*' -or
+            $clsName -like 'Windows.UI.Core.*' -or
+            $clsName -like 'ApplicationFrameWindow' -or
+            $clsName -like 'WinUIDesktopWin32WindowClass' -or
+            $clsName -like 'HwndWrapper[*' -or
+            $title -like '* - Peek' -or $title -eq 'Command Palette' -or
+            $title -like '*Picture in Picture*' -or $title -like '*Picture-in-Picture*') { return $true }
+        $candidates.Add([pscustomobject]@{ Hwnd = $h; Title = $title; Class = $clsName; Pid = $pid }) | Out-Null
+        return $true
+    }
+    [Win32.KmrRehook]::EnumWindows($enumCb, [IntPtr]::Zero) | Out-Null
+
+    $adopted = 0
+    $skipped = 0
+    foreach ($c in $candidates) {
+        if ($managed.ContainsKey([int64]$c.Hwnd)) { continue }
+        try { [Win32.KmrRehook]::SetForegroundWindow($c.Hwnd) | Out-Null } catch { }
+        Start-Sleep -Milliseconds 250
+        try {
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = $KomorebiExe
+            $psi.UseShellExecute = $false
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.Arguments = 'manage'
+            $p = [System.Diagnostics.Process]::Start($psi)
+            $p.WaitForExit(2000) | Out-Null
+            if ($p.ExitCode -eq 0) {
+                $adopted++
+                Say ("  re-adopted: {0} ({1})" -f $c.Title, $c.Class) 'DarkGray'
+            } else { $skipped++ }
+        } catch { $skipped++ }
+    }
+    Say ("  re-hook sweep: {0} window(s) adopted, {1} declined" -f $adopted, $skipped) 'Cyan'
+}
+
+Start-Sleep -Seconds 2
+Invoke-WindowRehook
+
+# ── 5. restore the watchdog ──────────────────────────────────────────────
 if ($watchWasEnabled) {
     try {
         Enable-ScheduledTask -TaskName $WatchTask | Out-Null
@@ -137,7 +240,7 @@ if ($watchWasEnabled) {
     } catch { Say "  could not re-enable the watchdog: $($_.Exception.Message)" 'Yellow' }
 }
 
-# ── 5. verify the layout survived ────────────────────────────────────────
+# ── 6. verify the layout survived ────────────────────────────────────────
 if ($before.Count -gt 0) {
     Start-Sleep -Seconds 2
     try {
@@ -161,7 +264,7 @@ if ($before.Count -gt 0) {
     } catch { Say "  could not verify state: $($_.Exception.Message)" 'Yellow' }
 }
 
-# ── 6. report the workspace order per monitor ────────────────────────────
+# ── 7. report the workspace order per monitor ────────────────────────────
 Say ''
 Say '=== workspace order per monitor ===' 'Cyan'
 try {
@@ -177,3 +280,15 @@ try {
 
 Say ''
 Say '  done. Workspaces are per-monitor: alt+N acts on the CURRENT monitor.' 'Cyan'
+
+# -- crash-safe watchdog restore (defect D4) ------------------------------
+# The explicit restore earlier in this script only runs on the happy path.
+# This `finally` also runs when a step throws, when the script exits early and
+# on Ctrl+C, so a failed or interrupted restart can never leave the watchdog
+# disabled. Komorebi + whkd must stay supervised at all times; only kill-all
+# is allowed to stop them.
+} finally {
+    if ($watchWasEnabled) {
+        try { Enable-ScheduledTask -TaskName $WatchTask | Out-Null } catch { }
+    }
+}
