@@ -40,3 +40,9 @@ $RECYCLE.BIN/
 
 # Ticket 12 runtime probe scratch output
 tests/.build/
+
+# Ticket 14 verification output. Ignored deliberately: .sandbox-marker inside this
+# folder is one of the three signals the sandbox gate uses to prove it is running
+# inside a Sandbox. Committing it would let a later run satisfy that signal on the
+# host machine, which is exactly the failure the gate exists to prevent.
+test-results/

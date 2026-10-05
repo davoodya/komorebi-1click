@@ -515,4 +515,113 @@ can be proven here is proven, and the one claim that cannot is the ticket's cent
 
 ### Remaining
 
-Ticket 14 (verification harness). Then D-T1 and D-T2.
+D-T1 and D-T2 — see the D-T1 note in ticket 14 below: the harness now exists, but it has never been
+run inside a real Sandbox session.
+
+---
+
+## Ticket 14 — verification harness (final ticket)
+
+Delivered as four files, split by *safety*, not by topic. That split is the requirement, because
+the two halves cannot share a machine:
+
+| File | Role | Runs on the live machine? |
+|---|---|---|
+| `tests/verify-readonly.ps1` | 30 read-only checks | **Yes** |
+| `tests/sandbox-verify-install.ps1` | 8 phases, installs + uninstalls | **Refuses to run** |
+| `tests/start-sandbox.ps1` | one-command Sandbox round trip | launches Sandbox only |
+| `tests/sandbox-bootstrap.ps1` | LogonCommand inside the Sandbox | n/a |
+
+The read-only gate (R01–R09) covers portability scan, parse of all 28 management scripts, config
+template + ADR-0016 `mintty` rule, all 6 payload SHA pins, the published artefact, `komorebic`
+health, both scheduled tasks at `RunLevel=Highest`, and every script the Dashboard verb registry
+names. It self-audits: R01 fails if a mutating cmdlet ever appears in it.
+
+The Sandbox suite runs P1 preflight → P2 install → P3 idempotency → P4 config → P5 runtime →
+**P6 dashboard (this is D-T1)** → P7 cleanup → P8 report, writing
+`test-results/verification-result.{json,txt}`.
+
+### Incident: the sandbox gate ran the installer against the live machine
+
+**This happened, twice, and must not be forgotten.**
+
+While testing the suite I ran it on Davood's machine to prove the guard worked. It did not.
+The installer regenerated the live `komorebi.json`, `whkdrc` and `applications.json`.
+
+Two independent guard bugs caused it:
+
+1. **v1 detected the sandbox by the presence of `WindowsSandbox.exe`.** That file exists on the
+   reference machine whenever the optional *feature* is installed — so "installed" was mistaken
+   for "inside a sandbox". Davood has the feature on.
+2. **v2 refused correctly but lived inside the phase runner**, whose `try/catch` caught the `exit`
+   and carried on into the install phase. So even a correct-looking guard was bypassed.
+
+Restoration: the post-incident state was snapshotted first
+(`~/.config/post-t14-incident-snapshot`), then the pre-incident files were restored from the
+`00:42` export (`~/.config/komorebi-backup-20261005-004258/config/`) and verified **byte-identical
+by SHA256**. `komorebic check` exits 0, PIDs never changed, and both scheduled tasks were never
+touched. A reversible pre-restore copy is at `~/.config/pre-t14-restore-20261005/`.
+
+The gate is now a standalone function invoked **before any mutating phase**, requiring all three
+of: the `.wsb`-written marker, `C:\Users\WDAGUtilityAccount`, and no real GPU. P2 independently
+re-checks the gate result, so moving or weakening the gate cannot silently re-enable installs.
+Verified: the gate aborts with exit 3 on this machine and changes nothing (config SHA and mtime
+identical before/after), and it still refuses when handed a **forged marker alone**.
+
+`test-results/` is gitignored on purpose — the `.sandbox-marker` is one of the three gate signals,
+and committing it would let a later run satisfy that signal on the host.
+
+### Bug found and fixed in an earlier ticket's suite
+
+`ticket13-publish.tests.ps1` failed on `.gitkeep`: its "no satellite DLLs" assertion counted the
+git-tracked folder marker. It passed 15/15 only until `.gitkeep` was restored after a publish wiped
+the folder — a latent false failure. Now exempt (the marker is not a publish artefact) **and** a new
+assertion requires `.gitkeep` to exist, so the folder cannot silently vanish on a fresh clone.
+Suite is now **16/16**, one assertion stronger than before.
+
+### Defects found by testing the harness against itself
+
+The same class of bug bit this ticket's own verification, which is why the read-only gate has two
+unusual properties:
+
+- **Vacuous passes.** R09's regex looked for single-quoted script names; the registry uses double
+  quotes, so it matched nothing and reported "all 0 scripts exist" as a PASS. A count assertion
+  with no floor proves nothing. Fixed, plus an extraction floor.
+- **Falsy empty-array guard.** R04 wrapped its ADR-0016 check in
+  `if ($cfg.layered_whitelist)`. An **empty array is falsy in PowerShell**, so emptying the
+  whitelist skipped the assertion and the gate passed. Only visible because the run printed 28/29
+  assertions instead of 29/29.
+- So the gate now asserts a **minimum assertion count**, making "a check silently stopped running"
+  a loud failure. Fault injection (4 scenarios: emptied whitelist, removed `mintty`, corrupted
+  payload, ghost script) now fails as it should; all restored to green.
+- `Select-String` is **case-insensitive by default**, so `DavoodYa` matched `davoodya` inside a
+  GitHub URL and invented a leak. The scan is now `-CaseSensitive`.
+- `@($genericList)` returns an **empty array** here, which threw
+  "Argument types do not match" in `Save-Report` *and* would have silently written a report with
+  zero checks. All list reads now use `.ToArray()`.
+
+### Assumed-vs-verified API surfaces
+
+Every external surface was read from the real source rather than recalled, which caught six invented
+parameters: `Install.ps1` takes **only** `-SkipElevationCheck` (no `-InstallDir`, `-AutoInstall`,
+`-Force`), and the uninstaller takes **`-Scope`** (ValidateSet `all|komorebi-whkd|yasb|autohotkey`)
+plus `-KeepBinaries` — not `-Components`/`-RemoveUserConfig`/`-RemoveScheduledTasks`/`-WhatIf`.
+Paths were confirmed against the live machine: `komorebi.exe`/`komorebic.exe` are in
+`Program Files\komorebi\bin\` (**not** the folder root), `komorebi.json` in `.config\komorebi\`,
+and `whkdrc` **one level up** in `.config\` (`Install-Common.ps1` joins it as `..\whkdrc`).
+
+ADR-0016 needs no generator change: `layered_whitelist` is inherited from the template
+(`Install-Common.ps1` copies `komorebi.json` as the base), so the `mintty` rule survives install by
+construction. P4 verifies the **generated** file, not the template.
+
+### Verified
+
+Read-only gate **30/30**, exit 0 · gate refuses on the live machine with **zero** side effects ·
+4/4 fault injections caught · forged-marker injection refused · report round-trip verified ·
+report reader verified against a synthetic report (correctly exits 1) · full regression
+**406 assertions passed, 0 failed** across 10 suites (ticket13-publish now 16) · live config
+byte-identical to pre-incident · komorebi 25136 · whkd 38808 · yasb 47100 · `komorebic check` exit 0.
+
+**D-T1 remains unproven.** The harness that proves it is written and the P6 phase is in place, but
+it has never executed inside a real Sandbox session — Windows Sandbox must be enabled and the repo
+must sit on a local drive, since Sandbox cannot map `H:\Repo` over a network path.

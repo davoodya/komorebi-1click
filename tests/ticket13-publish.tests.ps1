@@ -182,12 +182,26 @@ if ($NoPublish) {
 
     # A single-file publish must not leave DLLs or satellite folders beside it.
     # Anything here is a file that a clean machine would fail to load.
+    #
+    # `.gitkeep` is exempt because it is a git-tracked marker that exists so the
+    # empty releases/ folder survives a clone — it is not a publish artefact and
+    # carries no runtime dependency. The assertion's intent is "no satellite
+    # DLLs", so counting the marker produced a false failure: the suite passed
+    # 15/15 only until .gitkeep was restored after a publish wiped the folder.
     $strays = @(Get-ChildItem $OutDir -Recurse -EA SilentlyContinue |
-                Where-Object { $_.Name -ne $ExeName })
+                Where-Object { $_.Name -ne $ExeName -and $_.Name -ne '.gitkeep' })
     if ($strays.Count -eq 0) {
-        Ok 'releases/ holds exactly one file - no satellite DLLs, no folders'
+        Ok 'releases/ holds exactly one publish artefact - no satellite DLLs, no folders'
     } else {
         No "releases/ holds $($strays.Count) extra item(s) beside the EXE:`n          $((($strays | Select-Object -First 8) | ForEach-Object { $_.Name }) -join ', ')`n          A single-file publish must be self-sufficient."
+    }
+
+    # Keep .gitkeep present: deleting it would leave releases/ untracked, so the
+    # folder would vanish on a fresh clone and the publish target would not exist.
+    if (-not (Test-Path (Join-Path $OutDir '.gitkeep'))) {
+        No 'releases/.gitkeep is missing - releases/ would not survive a clone'
+    } else {
+        Ok 'releases/.gitkeep is present so the folder survives a clone'
     }
 
     # --- size ----------------------------------------------------------

@@ -103,9 +103,84 @@ must run in the Sandbox.
 | 11 — no-lag execution | done (`da42d3a`) | `ticket11-threading.tests.ps1` — **67 assertions**, launches the EXE |
 | 12 — theme + elevation | done (`639216a`) | `ticket12-theme-elevation.tests.ps1` **48** + `ticket12-runtime.tests.ps1` **16** |
 | 13 — publish pipeline | done (`07e374e`) | `ticket13-publish.tests.ps1` **15** + `ticket13-runtime.tests.ps1` **24**. **D-T1 still open** — see below. |
+| 14 — verification harness | done | `verify-readonly.ps1` **30** (safe here) + `sandbox-verify-install.ps1` 8 phases (Sandbox only) + `start-sandbox.ps1` round trip. **D-T1 harness ready, unrun** — see below. |
 
 The Sandbox run itself is the single outstanding verification step for all four tickets.
 It requires no decisions — only launching `sandbox.wsb` and reading the printed result.
+
+---
+
+## VERIFICATION HARNESS (ticket 14)
+
+Verification is split in two, because the halves cannot share a machine.
+
+| File | What it does | Safe on the real machine? |
+|---|---|---|
+| `tests/verify-readonly.ps1` | 30 read-only checks | **Yes** |
+| `tests/sandbox-verify-install.ps1` | 8 phases, installs + uninstalls | **No — refuses to run** |
+| `tests/start-sandbox.ps1` | One-command Sandbox round trip | Yes (launches Sandbox only) |
+| `tests/sandbox-bootstrap.ps1` | Runs inside the Sandbox | N/A |
+
+### Read-only gate — run it any time
+
+```
+pwsh -File tests\verify-readonly.ps1
+```
+
+R01 proves the file contains no mutating cmdlet, R02 scans for source-machine paths,
+R03 parses all 28 management scripts, R04 validates the config template and the
+ADR-0016 `mintty` rule, R05 verifies all 6 payload SHA pins, R06 checks the published
+artefact, R07 checks `komorebic` health, R08 confirms both scheduled tasks are still
+`RunLevel=Highest`, R09 verifies every script the Dashboard verb registry names.
+
+Two properties worth keeping in mind when editing it:
+
+- **R01 self-audits.** If you add a `Remove-Item` to a read-only check, R01 fails.
+- **The floor assertion.** Two defects here (a regex that matched nothing, and a
+  falsy empty-array guard) both produced a PASS with *fewer* assertions than a
+  healthy run. The summary therefore asserts a minimum assertion count, so "a check
+  silently stopped running" fails loudly instead.
+
+### Sandbox suite
+
+```
+.\tests\start-sandbox.ps1              # full round trip
+.\tests\start-sandbox.ps1 -KeepOpen
+.\tests\start-sandbox.ps1 -ReadExistingReport
+```
+
+Phases: P1 preflight · P2 install · P3 idempotency · P4 config · P5 runtime ·
+P6 dashboard (this is **D-T1**) · P7 cleanup · P8 report.
+
+Results land in `test-results/verification-result.{json,txt}`, archived per run.
+
+#### The sandbox gate — read this before changing the suite
+
+`sandbox-verify-install.ps1` installs software and rewrites the live
+komorebi/whkd/YASB config. It refuses to run unless **all three** signals agree:
+
+1. `test-results/.sandbox-marker` — written only by the `.wsb` bootstrap
+2. `C:\Users\WDAGUtilityAccount` — the container account
+3. no real GPU
+
+**Two earlier versions of this guard were wrong, and both ran the installer against
+the reference machine.** Do not simplify it back:
+
+- **v1** checked for `WindowsSandbox.exe`. That file exists on the reference machine
+  whenever the optional *feature* is installed, so "installed" was mistaken for
+  "inside the sandbox".
+- **v2** refused correctly but sat inside the phase runner, whose `try/catch` caught
+  the exit and continued into the install phase anyway.
+
+The gate is now a standalone function called before any mutating phase, and P2
+independently re-checks the gate result. Fault injection confirms the gate still
+refuses with a forged marker alone.
+
+### Manual/VM fallback
+
+If Windows Sandbox is unavailable, run the same suite in a throwaway VM with the
+repo shared in, and copy `test-results/` back out. The read-only gate needs neither.
+
 
 ## DEFERRED TESTS — to run when ticket implementation is finished
 
@@ -119,7 +194,7 @@ can be proven on the development machine: both need an environment this machine 
 |---|---|
 | **What** | Launch the published self-contained `KomorebiDashboard.exe` on a machine with **no** .NET 8 Desktop Runtime, and confirm it opens its main window and that `--help` and a read-only verb work. |
 | **Why deferred** | This machine has the .NET 8 SDK, so a framework-dependent run would also work and prove nothing. The whole point of ticket 13's `SelfContained` flag is untested until the runtime is absent. |
-| **How** | Windows Sandbox (`sandbox.wsb`, networking disabled) or any VM without the runtime. The Sandbox already maps the repo read-only as `C:\Repo`. |
+| **How** | **Harness now exists (ticket 14).** Run `tests\start-sandbox.ps1` — it generates the `.wsb`, mounts the repo read/write at `C:\komorebi-src`, runs `sandbox-verify-install.ps1`, and copies the report back to `test-results\`. Phase **P6-dashboard-dt1** is the D-T1 check. Still needs one real Sandbox session: Windows Sandbox must be enabled (Pro/Enterprise/Education) and the host repo must sit on a LOCAL drive, since Sandbox cannot map `H:\Repo` over a network or `\\wsl$`. |
 | **Pass criteria** | Window handle non-zero; `--help` exits 0; the app does **not** print "You must install .NET" or `0x80008096`. |
 | **Fails if** | The app depends on a machine-installed runtime, or a satellite/native DLL was left beside the EXE and is missing. |
 | **Blocks** | Ticket 13 cannot be called done. ADR-0015 lists this as required Sandbox verification. |
