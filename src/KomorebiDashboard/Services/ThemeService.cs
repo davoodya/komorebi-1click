@@ -1,5 +1,7 @@
 using System.Windows;
+using System.Windows.Media;
 using Wpf.Ui.Appearance;
+using Wpf.Ui.Controls;
 using Wpf.Ui.Markup;
 
 namespace KomorebiDashboard.Services;
@@ -9,103 +11,86 @@ namespace KomorebiDashboard.Services;
 /// priority 4: "modern, beautiful UI", which is only ever bought without
 /// giving up priorities 1-3).
 ///
-/// WHY THIS IS CAREFUL ABOUT COST
-///   Switching a theme is the single most expensive thing this app ever does to
-///   its UI thread: WPF-UI re-resolves every ThemeResource the controls have
-///   already bound. So two rules keep it cheap:
+/// SESSION 2026-10-06 FIX — D21:
+///   The original implementation called ApplicationThemeManager.Apply() which
+///   swaps resource dictionaries but does NOT repaint the DWM backdrop on an
+///   already-open window. That is why only the title bar changed colour while
+///   the body stayed white.
 ///
-///   1. ONE dictionary per theme, created once and cached. Re-parsing the XAML
-///      on every toggle is what produces a visible stall; a cached dictionary
-///      makes the second toggle of the same theme a no-op.
-///   2. The switch is applied through <see cref="ApplicationThemeManager.Apply"/>,
-///      which re-resolves bindings immediately. A hand-rolled swap of
-///      Application.Current.Resources would leave already-open controls holding
-///      stale brushes until they were recreated — the classic "half-themed
-///      window" defect.
+///   The fix has two parts:
+///   1. MainWindow MUST derive from FluentWindow (not Window) so the DWM
+///      backdrop material is active in the first place.
+///   2. After every theme/accent change, we iterate all open windows and call
+///      WindowBackgroundManager.UpdateBackground() to force the DWM attribute
+///      to repaint on the live surface.
 ///
-/// Both Dark and Light are always materialised up front so the FIRST toggle is
-/// as fast as the second.
+/// COLOUR SCHEMES:
+///   8 accent presets are exposed through SetColorScheme(). Each one calls
+///   ApplicationAccentColorManager.Apply(Color) which re-derives the full
+///   palette (hover, pressed, disabled) from the seed colour.
 /// </summary>
 public static class ThemeService
 {
-    /// <summary>
-    /// The Windows 11 Fluent backdrop. Mica is the correct choice for a
-    /// management tool: it tints the window with the system accent and is far
-    /// cheaper to composite than Acrylic, which matters because repainting a
-    /// blurred backdrop over a large window is exactly the kind of work that
-    /// shows up as jank.
-    /// </summary>
-    private const Wpf.Ui.Controls.WindowBackdropType FluentBackdrop =
-        Wpf.Ui.Controls.WindowBackdropType.Mica;
+    private const WindowBackdropType FluentBackdrop = WindowBackdropType.Mica;
 
-    /// <summary>The theme in force right now.</summary>
     public static ApplicationTheme CurrentTheme { get; private set; } = ApplicationTheme.Unknown;
 
-    /// <summary>
-    /// The cached dictionaries, one per theme. Populated by <see cref="Ensure"/>.
-    /// Static because a ResourceDictionary is a Framework resource: it must be
-    /// applied to Application.Current.Resources, not owned by a window, or a
-    /// closed window would take the theme with it.
-    /// </summary>
     private static readonly Dictionary<ApplicationTheme, ThemesDictionary> Cache = new();
 
-    /// <summary>The other theme — what a toggle should switch TO.</summary>
+    // --- Colour scheme presets ---
+    public static readonly Dictionary<string, Color> ColorSchemes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Blue"]    = Color.FromRgb(0x00, 0x78, 0xD4),
+        ["Indigo"]  = Color.FromRgb(0x4F, 0x46, 0xE5),
+        ["Violet"]  = Color.FromRgb(0x7C, 0x3A, 0xED),
+        ["Rose"]    = Color.FromRgb(0xE1, 0x1D, 0x48),
+        ["Amber"]   = Color.FromRgb(0xF5, 0x9E, 0x0B),
+        ["Emerald"] = Color.FromRgb(0x10, 0xB9, 0x81),
+        ["Teal"]    = Color.FromRgb(0x0D, 0x94, 0x88),
+        ["Slate"]   = Color.FromRgb(0x64, 0x74, 0x8B),
+    };
+
+    private static string _currentScheme = "Blue";
+    public static string CurrentScheme => _currentScheme;
+
     public static ApplicationTheme Opposite =>
         CurrentTheme == ApplicationTheme.Dark ? ApplicationTheme.Light : ApplicationTheme.Dark;
 
     /// <summary>
-    /// Apply the startup theme. Called BEFORE the main window is shown so the
-    /// user never sees the default light theme repaint into dark, which would be
-    /// a priority-2 (smoothness) regression caused by priority-4 work.
+    /// Apply the startup theme BEFORE the main window is shown.
     /// </summary>
     public static void ApplyDefault()
     {
-        // Follow the OS where the OS expresses a preference, otherwise Light.
-        // Following the system theme is the Windows-native behaviour and is what
-        // "defaults to the Windows 11 appearance" means in practice.
         var theme = ApplicationThemeManager.GetSystemTheme() == SystemTheme.Dark
             ? ApplicationTheme.Dark
             : ApplicationTheme.Light;
 
         Apply(theme);
-        Report($"startup theme: {theme}");
+        ApplyAccent(ColorSchemes[_currentScheme]);
+        Report($"startup theme: {theme}, scheme: {_currentScheme}");
     }
 
     /// <summary>
-    /// Apply a theme immediately. Safe to call repeatedly with the same value;
-    /// a redundant call is skipped so a double-click on the toggle costs nothing.
+    /// Apply a theme immediately. Redundant calls are skipped.
     /// </summary>
     public static void Apply(ApplicationTheme theme)
     {
         if (theme == ApplicationTheme.Unknown) theme = ApplicationTheme.Light;
-
         if (CurrentTheme == theme && Application.Current is not null) return;
 
         Ensure(theme);
 
-        // Apply() is WPF-UI's own entry point: it resolves the dictionary,
-        // merges it and notifies every ThemeResource binding, which is why the
-        // change is visible immediately rather than on the next window.
-        //
-        // SystemTheme is NOT an ApplicationTheme value in WPF-UI 4.3.0 — it is
-        // reached through ApplySystemTheme() and read back with
-        // GetSystemTheme(). Both verified by reflection; the 4.x docs still
-        // mention a SystemTheme enum member that this version dropped.
-        if (theme == ApplicationTheme.Unknown)
-        {
-            ApplicationThemeManager.ApplySystemTheme();
-            CurrentTheme = ApplicationThemeManager.GetAppTheme();
-            return;
-        }
-
+        // Use the 3-parameter overload verified to exist in WPF-UI 4.3.0.
+        // This applies the theme AND sets the backdrop type for new windows.
         ApplicationThemeManager.Apply(theme, FluentBackdrop, updateAccent: true);
-
         CurrentTheme = theme;
+
+        // D21 fix: force already-open windows to repaint their DWM backdrop.
+        RepaintAllWindows();
     }
 
     /// <summary>
-    /// Toggle between Dark and Light. Returns the theme now in force so the
-    /// caller can update a label without asking again.
+    /// Toggle between Dark and Light. Returns the theme now in force.
     /// </summary>
     public static ApplicationTheme Toggle()
     {
@@ -114,37 +99,88 @@ public static class ThemeService
         return CurrentTheme;
     }
 
+    /// <summary>Explicit theme setter for Customization tab.</summary>
+    public static void SetTheme(ApplicationTheme theme) => Apply(theme);
+
     /// <summary>
-    /// Materialise and cache the dictionary for a theme.
-    ///
-    /// Source IS NOT SET HERE, DELIBERATELY. An earlier draft pointed it at
-    /// pack://application:,,,/Wpf.Ui;component/Themes/{theme}.xaml and the app
-    /// died on startup with:
-    ///
-    ///     XamlParseException: Set property 'ResourceDictionary.Source' threw
-    ///     IOException: Cannot locate resource 'themes/light.xaml'
-    ///
-    /// The real location is Wpf.Ui.g.resources -> resources/theme/light.baml,
-    /// and ThemesDictionary already derives the correct pack URI itself in its
-    /// internal SetSourceBasedOnSelectedTheme(). Setting Source by hand both
-    /// duplicated that logic and used a path that does not exist. Assigning
-    /// Theme alone is correct.
-    ///
-    /// The dictionary is also constructed empty and then given a theme, because
-    /// Theme's setter is what triggers that internal Source derivation.
+    /// Changes the accent colour scheme at runtime.
     /// </summary>
+    public static void SetColorScheme(string name)
+    {
+        if (!ColorSchemes.TryGetValue(name, out var color)) return;
+        _currentScheme = name;
+        ApplyAccent(color);
+    }
+
+    /// <summary>
+    /// Changes the backdrop type on all open FluentWindows at runtime.
+    /// </summary>
+    public static void SetBackdrop(WindowBackdropType type)
+    {
+        var app = Application.Current;
+        if (app?.Windows == null) return;
+
+        foreach (Window w in app.Windows)
+        {
+            if (w is FluentWindow fw)
+            {
+                fw.WindowBackdropType = type;
+                try { WindowBackgroundManager.UpdateBackground(fw, CurrentTheme, type); }
+                catch { /* non-fatal: API may differ across minor versions */ }
+            }
+        }
+    }
+
+    // ---- internals ----
+
+    private static void ApplyAccent(Color color)
+    {
+        ApplicationAccentColorManager.Apply(color);
+        RepaintAllWindows();
+    }
+
     private static void Ensure(ApplicationTheme theme)
     {
         if (Cache.ContainsKey(theme)) return;
-
         Cache[theme] = new ThemesDictionary { Theme = theme };
     }
 
     /// <summary>
-    /// Report the applied theme. Priority 1 is speed and priority 3 is
-    /// smoothness, but a theme the user cannot confirm changed is a support
-    /// question later, so it is reported on the same channel as startup timing.
+    /// D21 fix: after any theme or accent change, iterate all open windows
+    /// and force the background brush to re-resolve from the updated resource
+    /// dictionary. For FluentWindows, also update the DWM backdrop.
     /// </summary>
+    private static void RepaintAllWindows()
+    {
+        var app = Application.Current;
+        if (app?.Windows == null) return;
+
+        Window[] snapshot;
+        try { snapshot = app.Windows.Cast<Window>().ToArray(); }
+        catch { return; }
+
+        foreach (var window in snapshot)
+        {
+            // Force FluentWindow DWM backdrop repaint
+            if (window is FluentWindow fw)
+            {
+                try
+                {
+                    WindowBackgroundManager.UpdateBackground(fw, CurrentTheme, FluentBackdrop);
+                }
+                catch { /* fallback below handles it */ }
+            }
+
+            // Re-resolve background from the updated resource dictionary
+            try
+            {
+                var brush = app.TryFindResource("ApplicationBackgroundBrush") as Brush;
+                if (brush != null) window.Background = brush;
+            }
+            catch { /* non-fatal */ }
+        }
+    }
+
     private static void Report(string message)
     {
         Console.WriteLine($"[KomorebiDashboard] {message}");

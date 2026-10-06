@@ -207,16 +207,25 @@ if (Test-Path $cfgPath) {
         # ADR-0016, requirement 2. Verified on the TEMPLATE here; the Sandbox
         # harness verifies the GENERATED copy, which is the one that ships.
         #
-        # Deliberately NOT wrapped in `if ($cfg.layered_whitelist)`: an empty
+        # Deliberately NOT wrapped in `if ($cfg.layered_applications)`: an empty
         # array is FALSY in PowerShell, so that guard made a fully-emptied
-        # whitelist skip this assertion and the gate reported success. Found by
+        # list skip this assertion and the gate reported success. Found by
         # fault injection — emptying the array passed at 28/28 while a healthy
         # run is 29/29, so the assertion COUNT itself exposed the bug.
-        $wl = @($cfg.layered_whitelist)
-        Assert 'the template has a non-empty layered_whitelist' `
+        #
+        # The key is `layered_applications` in komorebi.json. `layered_whitelist`
+        # is the name of the same list in `komorebic global-state` OUTPUT — it is
+        # NOT a valid input key and serde silently ignores it (no error, no
+        # warning), which is exactly how the elevated-console regression shipped.
+        $wl = @($cfg.layered_applications)
+        Assert 'the template has a non-empty layered_applications' `
                ($wl.Count -ge 1) ("entries: " + $wl.Count)
-        Assert 'the layered_whitelist contains the mintty class rule (ADR-0016)' `
+        Assert 'the layered_applications contains the mintty class rule (ADR-0016)' `
                ([bool]([string]($wl | ConvertTo-Json -Compress) -match 'mintty'))
+        Assert 'the layered_applications contains the ConsoleWindowClass rule (elevated consoles)' `
+               ([bool]([string]($wl | ConvertTo-Json -Compress) -match 'ConsoleWindowClass'))
+        Assert 'the obsolete layered_whitelist key is absent (silently ignored by komorebi)' `
+               (-not ($cfg.PSObject.Properties.Name -contains 'layered_whitelist'))
     }
 }
 

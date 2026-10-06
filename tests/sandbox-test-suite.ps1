@@ -142,8 +142,9 @@ Assert 'YASB sensor script exists in the repo' (Test-Path "$Repo\scripts\sensor-
 
 Section 'T03.2 — the generated config carries the source-machine behaviour'
 
-$wl = ($cfg.layered_whitelist | ConvertTo-Json -Compress)
-Assert 'layered_whitelist has the mintty Class rule' ($wl -like '*mintty*')
+$wl = ($cfg.layered_applications | ConvertTo-Json -Compress)
+Assert 'layered_applications has the mintty Class rule' ($wl -like '*mintty*')
+Assert 'layered_applications has the ConsoleWindowClass rule (elevated consoles)' ($wl -like '*ConsoleWindowClass*')
 
 Section 'T03.3 — no source-machine residue (portability)'
 

@@ -404,11 +404,13 @@ Phase 'P4-config' {
 
     # ADR-0016 requirement 2. The whitelist MUST survive generation. If the
     # installer rebuilt the object from a stale copy, this is where it disappears.
-    $wl = @($cfg.layered_whitelist)
-    Assert 'the GENERATED config keeps a non-empty layered_whitelist' `
+    $wl = @($cfg.layered_applications)
+    Assert 'the GENERATED config keeps a non-empty layered_applications' `
            ($wl.Count -ge 1) ("entries: " + $wl.Count)
-    Assert 'the GENERATED whitelist still whitelists mintty (ADR-0016)' `
+    Assert 'the GENERATED list still whitelists mintty (ADR-0016)' `
            ([bool]([string]($wl | ConvertTo-Json -Compress) -match 'mintty'))
+    Assert 'the GENERATED list whitelists ConsoleWindowClass (elevated consoles)' `
+           ([bool]([string]($wl | ConvertTo-Json -Compress) -match 'ConsoleWindowClass'))
 
     # No source-machine path may survive into the generated files.
     $leaked = @()

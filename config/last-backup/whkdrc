@@ -1,0 +1,121 @@
+.shell powershell
+alt + shift + r : C:\Progra~1\komorebi\bin\komorebic.exe reload-configuration
+alt + shift + e : C:\Progra~1\komorebi\bin\komorebic.exe stop
+alt + shift + p : C:\Progra~1\komorebi\bin\komorebic.exe toggle-pause
+alt + r : C:\Progra~1\komorebi\bin\komorebic.exe retile
+alt + i : C:\Progra~1\komorebi\bin\komorebic.exe toggle-shortcuts
+alt + shift + o : C:\Users\DavoodYa\.config\restart-whkd.cmd
+alt + h : C:\Progra~1\komorebi\bin\komorebic.exe focus left
+alt + l : C:\Progra~1\komorebi\bin\komorebic.exe focus right
+alt + k : C:\Progra~1\komorebi\bin\komorebic.exe focus up
+alt + j : C:\Progra~1\komorebi\bin\komorebic.exe focus down
+alt + left : C:\Progra~1\komorebi\bin\komorebic.exe focus left
+alt + right : C:\Progra~1\komorebi\bin\komorebic.exe focus right
+alt + up : C:\Progra~1\komorebi\bin\komorebic.exe focus up
+alt + down : C:\Progra~1\komorebi\bin\komorebic.exe focus down
+alt + oem_4 : C:\Progra~1\komorebi\bin\komorebic.exe cycle-focus previous
+alt + oem_6 : C:\Progra~1\komorebi\bin\komorebic.exe cycle-focus next
+alt + ctrl + q : C:\Progra~1\komorebi\bin\komorebic.exe focus-monitor-at-cursor
+alt + shift + h : C:\Progra~1\komorebi\bin\komorebic.exe move left
+alt + shift + l : C:\Progra~1\komorebi\bin\komorebic.exe move right
+alt + shift + k : C:\Progra~1\komorebi\bin\komorebic.exe move up
+alt + shift + j : C:\Progra~1\komorebi\bin\komorebic.exe move down
+alt + shift + left : C:\Progra~1\komorebi\bin\komorebic.exe move left
+alt + shift + right : C:\Progra~1\komorebi\bin\komorebic.exe move right
+alt + shift + up : C:\Progra~1\komorebi\bin\komorebic.exe move up
+alt + shift + down : C:\Progra~1\komorebi\bin\komorebic.exe move down
+alt + ctrl + h : C:\Progra~1\komorebi\bin\komorebic.exe cycle-move previous
+alt + ctrl + l : C:\Progra~1\komorebi\bin\komorebic.exe cycle-move next
+alt + ctrl + shift + h : C:\Progra~1\komorebi\bin\komorebic.exe promote
+alt + ctrl + shift + l : C:\Progra~1\komorebi\bin\komorebic.exe promote-swap
+alt + shift + return : C:\Progra~1\komorebi\bin\komorebic.exe promote
+alt + ctrl + y : C:\Progra~1\komorebi\bin\komorebic.exe promote-focus
+alt + shift + b : C:\Progra~1\komorebi\bin\komorebic.exe promote-swap left
+alt + shift + n : C:\Progra~1\komorebi\bin\komorebic.exe promote-swap right
+alt + oem_1 : C:\Progra~1\komorebi\bin\komorebic.exe unstack
+alt + ctrl + oem_4 : C:\Progra~1\komorebi\bin\komorebic.exe cycle-stack previous
+alt + ctrl + oem_6 : C:\Progra~1\komorebi\bin\komorebic.exe cycle-stack next
+alt + ctrl + b : C:\Progra~1\komorebi\bin\komorebic.exe stack-all
+alt + ctrl + n : C:\Progra~1\komorebi\bin\komorebic.exe unstack-all
+alt + ctrl + w : C:\Progra~1\komorebi\bin\komorebic.exe toggle-workspace-float-override
+alt + u : C:\Progra~1\komorebi\bin\komorebic.exe resize-axis horizontal decrease
+alt + p : C:\Progra~1\komorebi\bin\komorebic.exe resize-axis horizontal increase
+alt + oem_2 : C:\Progra~1\komorebi\bin\komorebic.exe resize-axis vertical increase
+alt + oem_8 : C:\Progra~1\komorebi\bin\komorebic.exe resize-axis vertical decrease
+alt + oem_plus : C:\Progra~1\komorebi\bin\komorebic.exe resize-edge right increase
+alt + oem_minus : C:\Progra~1\komorebi\bin\komorebic.exe resize-edge left decrease
+alt + shift + oem_plus : C:\Progra~1\komorebi\bin\komorebic.exe resize-edge down increase
+alt + shift + oem_minus : C:\Progra~1\komorebi\bin\komorebic.exe resize-edge up decrease
+alt + ctrl + shift + b : C:\Progra~1\komorebi\bin\komorebic.exe save-resize C:\Users\DavoodYa\.config\komorebi-resize.json
+alt + ctrl + c : C:\Progra~1\komorebi\bin\komorebic.exe load-resize C:\Users\DavoodYa\.config\komorebi-resize.json
+alt + t : C:\Progra~1\komorebi\bin\komorebic.exe toggle-float
+alt + ctrl + t : powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\Users\DavoodYa\.config\toggle-transparency.ps1
+alt + f : C:\Progra~1\komorebi\bin\komorebic.exe toggle-maximize
+alt + m : C:\Progra~1\komorebi\bin\komorebic.exe minimize
+alt + shift + t : C:\Progra~1\komorebi\bin\komorebic.exe toggle-monocle
+alt + shift + oem_3 : C:\Progra~1\komorebi\bin\komorebic.exe toggle-lock
+alt + shift + c : C:\Progra~1\komorebi\bin\komorebic.exe toggle-transparency
+alt + shift + x : C:\Progra~1\komorebi\bin\komorebic.exe toggle-window-container-behaviour
+alt + shift + z : C:\Progra~1\komorebi\bin\komorebic.exe toggle-window-based-work-area-offset
+alt + oem_comma : C:\Progra~1\komorebi\bin\komorebic.exe cycle-layout previous
+alt + oem_period : C:\Progra~1\komorebi\bin\komorebic.exe cycle-layout next
+alt + v : C:\Progra~1\komorebi\bin\komorebic.exe flip-layout horizontal
+alt + y : C:\Progra~1\komorebi\bin\komorebic.exe flip-layout vertical
+alt + x : C:\Progra~1\komorebi\bin\komorebic.exe workspace-layout 0 0 BSP
+alt + 1 : C:\Progra~1\komorebi\bin\komorebic.exe focus-workspace 0
+alt + 2 : C:\Progra~1\komorebi\bin\komorebic.exe focus-workspace 1
+alt + 3 : C:\Progra~1\komorebi\bin\komorebic.exe focus-workspace 2
+alt + 4 : C:\Progra~1\komorebi\bin\komorebic.exe focus-workspace 3
+alt + 5 : C:\Progra~1\komorebi\bin\komorebic.exe focus-workspace 4
+alt + 6 : C:\Progra~1\komorebi\bin\komorebic.exe focus-workspace 5
+alt + 7 : C:\Progra~1\komorebi\bin\komorebic.exe focus-workspace 6
+alt + 8 : C:\Progra~1\komorebi\bin\komorebic.exe focus-workspace 7
+alt + 9 : C:\Progra~1\komorebi\bin\komorebic.exe focus-workspace 8
+alt + shift + 1 : C:\Progra~1\komorebi\bin\komorebic.exe move-to-workspace 0
+alt + shift + 2 : C:\Progra~1\komorebi\bin\komorebic.exe move-to-workspace 1
+alt + shift + 3 : C:\Progra~1\komorebi\bin\komorebic.exe move-to-workspace 2
+alt + shift + 4 : C:\Progra~1\komorebi\bin\komorebic.exe move-to-workspace 3
+alt + shift + 5 : C:\Progra~1\komorebi\bin\komorebic.exe move-to-workspace 4
+alt + shift + 6 : C:\Progra~1\komorebi\bin\komorebic.exe move-to-workspace 5
+alt + shift + 7 : C:\Progra~1\komorebi\bin\komorebic.exe move-to-workspace 6
+alt + shift + 8 : C:\Progra~1\komorebi\bin\komorebic.exe move-to-workspace 7
+alt + shift + 9 : C:\Progra~1\komorebi\bin\komorebic.exe move-to-workspace 8
+alt + ctrl + 1 : C:\Progra~1\komorebi\bin\komorebic.exe send-to-workspace 0
+alt + ctrl + 2 : C:\Progra~1\komorebi\bin\komorebic.exe send-to-workspace 1
+alt + ctrl + 3 : C:\Progra~1\komorebi\bin\komorebic.exe send-to-workspace 2
+alt + ctrl + 4 : C:\Progra~1\komorebi\bin\komorebic.exe send-to-workspace 3
+alt + ctrl + 5 : C:\Progra~1\komorebi\bin\komorebic.exe send-to-workspace 4
+alt + ctrl + 6 : C:\Progra~1\komorebi\bin\komorebic.exe send-to-workspace 5
+alt + ctrl + 7 : C:\Progra~1\komorebi\bin\komorebic.exe send-to-workspace 6
+alt + ctrl + 8 : C:\Progra~1\komorebi\bin\komorebic.exe send-to-workspace 7
+alt + ctrl + 9 : C:\Progra~1\komorebi\bin\komorebic.exe send-to-workspace 8
+alt + s : C:\Progra~1\komorebi\bin\komorebic.exe cycle-workspace next
+alt + a : C:\Progra~1\komorebi\bin\komorebic.exe cycle-workspace previous
+alt + d : C:\Progra~1\komorebi\bin\komorebic.exe focus-last-workspace
+alt + ctrl + g : C:\Progra~1\komorebi\bin\komorebic.exe cycle-empty-workspace next
+alt + ctrl + a : C:\Progra~1\komorebi\bin\komorebic.exe cycle-empty-workspace previous
+alt + ctrl + oem_comma : C:\Progra~1\komorebi\bin\komorebic.exe focus-monitor 0
+alt + ctrl + oem_period : C:\Progra~1\komorebi\bin\komorebic.exe focus-monitor 1
+alt + ctrl + oem_3 : C:\Progra~1\komorebi\bin\komorebic.exe focus-monitor 2
+alt + ctrl + e : C:\Progra~1\komorebi\bin\komorebic.exe cycle-monitor previous
+alt + ctrl + r : C:\Progra~1\komorebi\bin\komorebic.exe cycle-monitor next
+alt + shift + f1 : C:\Progra~1\komorebi\bin\komorebic.exe move-to-monitor 0
+alt + shift + f2 : C:\Progra~1\komorebi\bin\komorebic.exe move-to-monitor 1
+alt + shift + f3 : C:\Progra~1\komorebi\bin\komorebic.exe move-to-monitor 2
+alt + shift + oem_4 : C:\Progra~1\komorebi\bin\komorebic.exe cycle-move-to-monitor previous
+alt + shift + oem_6 : C:\Progra~1\komorebi\bin\komorebic.exe cycle-move-to-monitor next
+alt + ctrl + shift + f1 : C:\Progra~1\komorebi\bin\komorebic.exe move-workspace-to-monitor 0
+alt + ctrl + shift + f2 : C:\Progra~1\komorebi\bin\komorebic.exe move-workspace-to-monitor 1
+alt + ctrl + shift + f3 : C:\Progra~1\komorebi\bin\komorebic.exe move-workspace-to-monitor 2
+alt + ctrl + shift + oem_4 : C:\Progra~1\komorebi\bin\komorebic.exe cycle-move-workspace-to-monitor previous
+alt + ctrl + shift + oem_6 : C:\Progra~1\komorebi\bin\komorebic.exe cycle-move-workspace-to-monitor next
+alt + ctrl + shift + d : C:\Progra~1\komorebi\bin\komorebic.exe send-to-monitor 0
+alt + ctrl + shift + f : C:\Progra~1\komorebi\bin\komorebic.exe send-to-monitor 1
+alt + ctrl + shift + g : C:\Progra~1\komorebi\bin\komorebic.exe send-to-monitor 2
+alt + ctrl + shift + o : C:\Progra~1\komorebi\bin\komorebic.exe kill                    # kill all orphaned windows
+alt + ctrl + m : C:\Progra~1\komorebi\bin\komorebic.exe restore-windows         # recover windows that got lost
+alt + ctrl + u : C:\Progra~1\komorebi\bin\komorebic.exe visible-windows         # JSON of windows komorebi can see
+alt + ctrl + shift + m : notepad.exe
+alt + ctrl + shift + p : wsl.exe
+alt + ctrl + shift + n : C:\Progra~1\Notepad++\notepad++.exe
+

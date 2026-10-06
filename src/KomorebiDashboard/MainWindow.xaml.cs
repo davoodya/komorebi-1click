@@ -3,10 +3,19 @@ using System.Windows;
 using KomorebiDashboard.Services;
 using KomorebiDashboard.ViewModels;
 using KomorebiDashboard.Views;
+using Wpf.Ui.Controls;
 
 namespace KomorebiDashboard;
 
-public partial class MainWindow : Window
+/// <summary>
+/// CRITICAL (D21 fix): MainWindow MUST derive from FluentWindow, not Window.
+/// FluentWindow activates the DWM Mica/Acrylic backdrop material that WPF-UI's
+/// theme system paints onto. A plain Window has no DWM backdrop attribute set,
+/// so ApplicationThemeManager.Apply() and WindowThemeManager.Apply() can swap
+/// resource dictionaries all day but the visible surface never repaints — which
+/// is exactly the "only the title bar changed" symptom we shipped in 639216a.
+/// </summary>
+public partial class MainWindow : FluentWindow
 {
     /// <summary>
     /// The one place the six ViewModels are constructed. Everything downstream —
@@ -25,8 +34,9 @@ public partial class MainWindow : Window
 
         Attach(nameof(KillStartView),  new KillStartViewModel(service));
         Attach(nameof(RestartView),    new RestartViewModel(service));
-        Attach(nameof(SettingsView),   new SettingsViewModel(service));
-        Attach(nameof(AutoHotkeyView), new AutoHotkeyViewModel(service));
+        Attach(nameof(SettingsView),       new SettingsViewModel(service));
+        Attach(nameof(CustomizationView),  new CustomizationViewModel(service));
+        Attach(nameof(AutoHotkeyView),     new AutoHotkeyViewModel(service));
         Attach(nameof(DebuggingView),  new DebuggingViewModel(service));
         Attach(nameof(UninstallView),  new UninstallViewModel(service));
     }
@@ -64,16 +74,16 @@ public partial class MainWindow : Window
     /// </summary>
     private void OnToggleTheme(object sender, RoutedEventArgs e)
     {
-        var applied = ThemeService.Toggle();
+        ThemeService.Toggle();
 
-        // The label reports what is now in force, so the user never has to
-        // guess which way a toggle went.
+        // Update the button label to reflect the NEW state after toggle.
         if (ThemeToggle is { } button)
         {
-            button.Content = applied == Wpf.Ui.Appearance.ApplicationTheme.Dark
+            var current = ThemeService.CurrentTheme;
+            button.Content = current == Wpf.Ui.Appearance.ApplicationTheme.Dark
                 ? "Light theme"
                 : "Dark theme";
-            button.ToolTip = $"Switch to the {(applied == Wpf.Ui.Appearance.ApplicationTheme.Dark ? "Light" : "Dark")} Fluent theme";
+            button.ToolTip = $"Switch to the {(current == Wpf.Ui.Appearance.ApplicationTheme.Dark ? "Light" : "Dark")} Fluent theme";
         }
     }
 }
