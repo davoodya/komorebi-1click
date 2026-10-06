@@ -9,37 +9,21 @@
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="Mica">
   <!--
-    D21 FIX (revised): FluentWindow REQUIRES ExtendsContentIntoTitleBar=True
-    when WindowBackdropType is Mica/Acrylic/Tabbed. Without it, OnSourceInitialized
-    throws InvalidOperationException and the window never appears.
+    D21 BLACK SCREEN FIX: FluentWindow with Mica backdrop requires a non-null,
+    opaque Background brush to composite content correctly. Without it, the DWM
+    Mica layer renders but WPF content is transparent → black screen.
 
-    The blank-UI symptom was caused by removing ExtendsContentIntoTitleBar to fix
-    content rendering behind the title bar — but that broke the backdrop requirement.
-    Correct approach: keep ExtendsContentIntoTitleBar=True, remove explicit Background
-    brush (Mica handles it), and let ui:TitleBar in Row 0 register as the drag region
-    so content in Row 1+ renders below it naturally.
+    ApplicationBackgroundBrush is provided by ThemesDictionary and resolves to
+    the correct Dark/Light surface colour. Setting it here ensures content is
+    always visible regardless of theme state at startup.
 
-    Hosts seven tab Views. All buttons inside them are generated from
-    VerbRegistry (ADR-0009 / ADR-0013).
-
-    x:Name IS LOAD-BEARING. MainWindow's constructor attaches each View's
-    DataContext via FindName, and FindName only finds NAMED elements in the
-    namescope. Without these names every FindName returns null and the app dies
-    on startup with a NullReferenceException before a window ever appears
-    (defect D18). The static suites could not catch it because nothing in them
-    launched the app; tests/ticket11-threading.tests.ps1 now really launches it.
-
-    The Fluent title bar is ui:TitleBar, a plain Control whose Show* properties
-    are set here. Those property names are verified against WPF-UI 4.3.0 by
-    reflection, not assumed.
-
-    Custom chrome (WindowStyle=None + AllowsTransparency) was tried and
-    rejected: it costs the window its native resize and maximise behaviour,
-    which is priority-2 damage bought for priority-4 looks.
-
-    The theme toggle lives here rather than inside a tab because it is not a
-    per-mechanism action: it applies to the whole window.
+    ExtendsContentIntoTitleBar=True is REQUIRED by FluentWindow when backdrop
+    is Mica/Acrylic/Tabbed. Removing it causes InvalidOperationException.
   -->
+  <ui:FluentWindow.Background>
+    <DynamicResource ResourceKey="ApplicationBackgroundBrush" />
+  </ui:FluentWindow.Background>
+
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
