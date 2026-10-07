@@ -1,89 +1,247 @@
 <UserControl x:Class="KomorebiDashboard.Views.CustomizationView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:ui="clr-namespace:Wpf.Ui.Controls;assembly=Wpf.Ui">
+             xmlns:ui="clr-namespace:Wpf.Ui.Controls;assembly=Wpf.Ui"
+             xmlns:views="clr-namespace:KomorebiDashboard.Views">
   <!--
-    Customization tab: font size, UI scale, colour scheme, sub-theme.
-    All bindings go through CustomizationViewModel. No code-behind logic.
+    This tab defines the layout every other tab follows: a heading, then one row
+    per option, stacked top to bottom, with the value control on the right and the
+    explanation under the option's name.
 
-    NOTE (D21 fix): WPF-UI 4.x CardControl does NOT expose a 'Description'
-    dependency property. Earlier drafts that set Description="..." failed to
-    compile with MC3072. The description text is now rendered as a separate
-    TextBlock below each card header, which achieves the same visual result
-    without relying on a non-existent API.
+    Nothing here applies a change on selection except the three that are genuinely
+    instant and safe (theme, accent, font/size), because those are the ones a user
+    wants to see before deciding. Everything else waits for Apply.
   -->
-  <ScrollViewer VerticalScrollBarVisibility="Auto">
-    <StackPanel Margin="16">
+  <views:TabLayout PageTitle="Customization"
+                   PageSubtitle="Appearance of the Dashboard itself: theme, accent color, typeface, size and interface scale. Changes are previewed immediately and are saved when you press Apply Settings."
+                   ShowConsole="False">
+    <StackPanel>
 
-      <!-- Section: Theme Mode -->
-      <TextBlock Text="Theme Mode" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,8" />
-      <ui:CardControl Header="Dark / Light" Margin="0,0,0,4">
-        <ui:Button Content="Toggle Theme"
-                   Command="{Binding ToggleThemeCommand}"
-                   Appearance="Primary" />
-      </ui:CardControl>
-      <TextBlock Text="Toggle the overall theme" Opacity="0.7" Margin="0,0,0,12" />
+      <!-- Theme -->
+      <TextBlock Style="{DynamicResource K1cSectionTitle}" Text="Theme" />
+      <Border Style="{DynamicResource K1cRow}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,14,0">
+            <TextBlock Text="Dark / Light" Style="{DynamicResource K1cRowTitle}" />
+            <TextBlock Text="{Binding ThemeStatus}" Style="{DynamicResource K1cRowDescription}" Margin="0,2,0,0" />
+          </StackPanel>
+          <ui:Button Grid.Column="1" Style="{DynamicResource K1cSecondaryButton}"
+                     Content="Toggle Theme"
+                     Command="{Binding ToggleThemeCommand}"
+                     MinWidth="150"
+                     ToolTip="Switch between the Dark and Light themes" />
+        </Grid>
+      </Border>
 
-      <!-- Section: Colour Scheme -->
-      <TextBlock Text="Colour Scheme" FontSize="18" FontWeight="SemiBold" Margin="0,12,0,8" />
-      <ui:CardControl Header="Accent Colour" Margin="0,0,0,4">
-        <ComboBox ItemsSource="{Binding AvailableSchemes}"
-                  SelectedItem="{Binding SelectedScheme, Mode=TwoWay}"
-                  MinWidth="160" />
-      </ui:CardControl>
-      <TextBlock Text="Changes the primary accent used across buttons, cards and highlights"
-                 Opacity="0.7" Margin="0,0,0,12" />
+      <!-- Accent -->
+      <TextBlock Style="{DynamicResource K1cSectionTitle}" Text="Accent color" />
+      <Border Style="{DynamicResource K1cRow}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,14,0">
+            <TextBlock Text="Accent Color" Style="{DynamicResource K1cRowTitle}" />
+            <TextBlock Style="{DynamicResource K1cRowDescription}" Margin="0,2,0,0"
+                       Text="Used for the selected tab, the primary button of every row, and every highlight in the app. Pick one of the standard colors, or choose a custom one." />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+            <!-- Live swatch so the choice is visible without looking away. Reads
+                 the accent brush, so it also reflects the header's Toggle Color. -->
+            <Border Width="20" Height="20" CornerRadius="4" Margin="0,0,10,0"
+                    Background="{DynamicResource K1cAccentBrush}"
+                    BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                    BorderThickness="1"
+                    ToolTip="{Binding AccentHex}" />
+            <ComboBox ItemsSource="{Binding AvailableSchemes}"
+                      SelectedItem="{Binding SelectedScheme, Mode=TwoWay}"
+                      MinWidth="150"
+                      Margin="0,0,8,0"
+                      ToolTip="Standard palette, or Custom... to pick any color" />
+            <!-- Explicit entry point to the picker: the "Custom..." entry in the
+                 list does the same thing, but a discoverable button is what most
+                 users reach for first. -->
+            <ui:Button Style="{DynamicResource K1cSecondaryButton}"
+                       Content="Custom Color"
+                       Command="{Binding PickCustomColorCommand}"
+                       MinWidth="130"
+                       ToolTip="Open the color picker and choose any accent color" />
+          </StackPanel>
+        </Grid>
+      </Border>
 
-      <!-- Section: Sub-Theme / Backdrop -->
-      <TextBlock Text="Sub-Theme" FontSize="18" FontWeight="SemiBold" Margin="0,12,0,8" />
-      <ui:CardControl Header="Window Backdrop" Margin="0,0,0,4">
-        <ComboBox ItemsSource="{Binding AvailableBackdrops}"
-                  SelectedItem="{Binding SelectedBackdrop, Mode=TwoWay}"
-                  MinWidth="160" />
-      </ui:CardControl>
-      <TextBlock Text="Mica (default), Acrylic, or None for maximum performance"
-                 Opacity="0.7" Margin="0,0,0,12" />
+      <!-- Typography -->
+      <TextBlock Style="{DynamicResource K1cSectionTitle}" Text="Typography" />
 
-      <!-- Section: Typography -->
-      <TextBlock Text="Typography" FontSize="18" FontWeight="SemiBold" Margin="0,12,0,8" />
+      <Border Style="{DynamicResource K1cRow}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,14,0">
+            <TextBlock Text="Font Family" Style="{DynamicResource K1cRowTitle}" />
+            <TextBlock Text="{Binding FontStatus}" Style="{DynamicResource K1cRowDescription}" Margin="0,2,0,0" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+            <ComboBox ItemsSource="{Binding AvailableFonts}"
+                      SelectedItem="{Binding SelectedFont, Mode=TwoWay}"
+                      SelectionChanged="OnFontSelectionChanged"
+                      MinWidth="240"
+                      MaxDropDownHeight="320"
+                      VirtualizingStackPanel.IsVirtualizing="True"
+                      VirtualizingStackPanel.VirtualizationMode="Recycling"
+                      ScrollViewer.CanContentScroll="True" />
+            <!-- Shown only while the full enumeration is running. -->
+            <TextBlock Text="Loading fonts..." Margin="10,0,0,0" VerticalAlignment="Center"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                       Visibility="{Binding IsLoadingFonts, Converter={StaticResource K1cBoolToVisibility}}" />
+          </StackPanel>
+        </Grid>
+      </Border>
 
-      <ui:CardControl Header="Base Font Size" Margin="0,0,0,4">
-        <StackPanel Orientation="Horizontal">
-          <Slider Minimum="10" Maximum="22" Value="{Binding FontSize, Mode=TwoWay}"
-                  Width="200" TickFrequency="1" IsSnapToTickEnabled="True"
-                  Margin="0,0,8,0" />
-          <TextBlock Text="{Binding FontSize, StringFormat={}{0:F0}px}"
-                     VerticalAlignment="Center" MinWidth="40" />
-        </StackPanel>
-      </ui:CardControl>
-      <TextBlock Text="Adjusts the root font size (default 14)" Opacity="0.7" Margin="0,0,0,8" />
+      <Border Style="{DynamicResource K1cRow}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,14,0">
+            <TextBlock Text="Base Font Size" Style="{DynamicResource K1cRowTitle}" />
+            <TextBlock Style="{DynamicResource K1cRowDescription}" Margin="0,2,0,0"
+                       Text="Root text size. Controls that size themselves from the font follow it." />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+            <Slider Minimum="10" Maximum="22"
+                    Value="{Binding FontSize, Mode=TwoWay}"
+                    Width="180" TickFrequency="1" IsSnapToTickEnabled="True"
+                    Margin="0,0,10,0" />
+            <TextBlock Text="{Binding FontSize, StringFormat={}{0:F0}px}"
+                       VerticalAlignment="Center" MinWidth="44" />
+          </StackPanel>
+        </Grid>
+      </Border>
 
-      <ui:CardControl Header="Font Family" Margin="0,0,0,4">
-        <ComboBox ItemsSource="{Binding AvailableFonts}"
-                  SelectedItem="{Binding SelectedFont, Mode=TwoWay}"
-                  MinWidth="200" />
-      </ui:CardControl>
-      <TextBlock Text="Choose the UI typeface" Opacity="0.7" Margin="0,0,0,12" />
+      <!-- Scale -->
+      <TextBlock Style="{DynamicResource K1cSectionTitle}" Text="Interface scale" />
+      <Border Style="{DynamicResource K1cRow}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,14,0">
+            <TextBlock Text="Scale Factor" Style="{DynamicResource K1cRowTitle}" />
+            <TextBlock Style="{DynamicResource K1cRowDescription}" Margin="0,2,0,0"
+                       Text="Scales the whole interface. 100% is the default; the layout is designed to stay usable from 80% to 150%." />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+            <Slider Minimum="80" Maximum="150"
+                    Value="{Binding UiScale, Mode=TwoWay}"
+                    Width="180" TickFrequency="5" IsSnapToTickEnabled="True"
+                    Margin="0,0,10,0" />
+            <TextBlock Text="{Binding UiScale, StringFormat={}{0:F0}%}"
+                       VerticalAlignment="Center" MinWidth="44" />
+          </StackPanel>
+        </Grid>
+      </Border>
 
-      <!-- Section: UI Scale -->
-      <TextBlock Text="UI Scale" FontSize="18" FontWeight="SemiBold" Margin="0,12,0,8" />
-      <ui:CardControl Header="Scale Factor" Margin="0,0,0,4">
-        <StackPanel Orientation="Horizontal">
-          <Slider Minimum="80" Maximum="150" Value="{Binding UiScale, Mode=TwoWay}"
-                  Width="200" TickFrequency="5" IsSnapToTickEnabled="True"
-                  Margin="0,0,8,0" />
-          <TextBlock Text="{Binding UiScale, StringFormat={}{0:F0}%}"
-                     VerticalAlignment="Center" MinWidth="45" />
-        </StackPanel>
-      </ui:CardControl>
-      <TextBlock Text="Scales the entire interface (100% = default)" Opacity="0.7" Margin="0,0,0,12" />
+      <!-- Console -->
+      <TextBlock Style="{DynamicResource K1cSectionTitle}" Text="Console" />
 
-      <!-- Reset -->
-      <ui:Button Content="Reset to Defaults"
-                 Command="{Binding ResetDefaultsCommand}"
-                 Appearance="Secondary"
-                 Margin="0,16,0,0" />
+      <Border Style="{DynamicResource K1cRow}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,14,0">
+            <TextBlock Text="Console Font Family" Style="{DynamicResource K1cRowTitle}" />
+            <TextBlock Text="{Binding ConsoleFontStatus}" Style="{DynamicResource K1cRowDescription}" Margin="0,2,0,0" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+            <!-- Its own list, independent of the app typeface: the console is
+                 monospaced for reading script output, the app is not. Same
+                 two-tier shape as the Typography row above, and the same
+                 virtualized combo so a full list opens without a stall. -->
+            <ComboBox ItemsSource="{Binding AvailableConsoleFonts}"
+                      SelectedItem="{Binding SelectedConsoleFont, Mode=TwoWay}"
+                      MinWidth="240"
+                      MaxDropDownHeight="320"
+                      VirtualizingStackPanel.IsVirtualizing="True"
+                      VirtualizingStackPanel.VirtualizationMode="Recycling"
+                      ScrollViewer.CanContentScroll="True" />
+          </StackPanel>
+        </Grid>
+      </Border>
 
+      <Border Style="{DynamicResource K1cRow}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,14,0">
+            <TextBlock Text="Console Font Size" Style="{DynamicResource K1cRowTitle}" />
+            <TextBlock Style="{DynamicResource K1cRowDescription}" Margin="0,2,0,0"
+                       Text="Type size inside the console pane only. Independent of the base font size so a large console font does not grow the whole interface." />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+            <Slider Minimum="8" Maximum="32"
+                    Value="{Binding ConsoleFontSize, Mode=TwoWay}"
+                    Width="180" TickFrequency="1" IsSnapToTickEnabled="True"
+                    Margin="0,0,10,0" />
+            <TextBlock Text="{Binding ConsoleFontSize, StringFormat={}{0:F0}px}"
+                       VerticalAlignment="Center" MinWidth="44" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border Style="{DynamicResource K1cRow}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,14,0">
+            <TextBlock Text="Console pane height" Style="{DynamicResource K1cRowTitle}" />
+            <TextBlock Style="{DynamicResource K1cRowDescription}" Margin="0,2,0,0"
+                       Text="Share of each tab given to script output. The rest is for the tab's controls; 25% keeps the console readable without crowding a short window." />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+            <Slider Minimum="10" Maximum="60"
+                    Value="{Binding ConsolePercent, Mode=TwoWay}"
+                    Width="180" TickFrequency="5" IsSnapToTickEnabled="True"
+                    Margin="0,0,10,0" />
+            <TextBlock Text="{Binding ConsolePercent, StringFormat={}{0:F0}%}"
+                       VerticalAlignment="Center" MinWidth="44" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- Actions -->
+      <TextBlock Style="{DynamicResource K1cSectionTitle}" Text="Apply" />
+      <StackPanel Orientation="Horizontal" Margin="0,2,0,4">
+        <ui:Button Style="{DynamicResource K1cRunButton}"
+                   Content="Apply Settings"
+                   Command="{Binding ApplyCommand}"
+                   MinWidth="160"
+                   Margin="0,0,8,0"
+                   ToolTip="Save the current appearance so it is restored on the next launch" />
+        <ui:Button Style="{DynamicResource K1cSecondaryButton}"
+                   Content="Reset to Defaults"
+                   Command="{Binding ResetDefaultsCommand}"
+                   MinWidth="160"
+                   HorizontalAlignment="Left"
+                   ToolTip="Preview the defaults; press Apply Settings to keep them" />
+      </StackPanel>
+      <TextBlock Text="{Binding ApplyStatus}" Style="{DynamicResource K1cRowDescription}" Margin="2,4,0,0" />
     </StackPanel>
-  </ScrollViewer>
+  </views:TabLayout>
 </UserControl>

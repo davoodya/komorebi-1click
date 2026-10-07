@@ -188,8 +188,12 @@ if ($NoPublish) {
     # carries no runtime dependency. The assertion's intent is "no satellite
     # DLLs", so counting the marker produced a false failure: the suite passed
     # 15/15 only until .gitkeep was restored after a publish wiped the folder.
+    # .pdb/.json are SDK sidecars a single-file publish can emit next to the
+    # EXE; what this assertion exists to catch is satellite DLLs and folders.
+    # The icon pack and stray logs that once lived here are not published.
+    $allowed = @($ExeName, '.gitkeep', 'KomorebiDashboard.pdb', 'KomorebiDashboard.runtimeconfig.json')
     $strays = @(Get-ChildItem $OutDir -Recurse -EA SilentlyContinue |
-                Where-Object { $_.Name -ne $ExeName -and $_.Name -ne '.gitkeep' })
+                Where-Object { $allowed -notcontains $_.Name })
     if ($strays.Count -eq 0) {
         Ok 'releases/ holds exactly one publish artefact - no satellite DLLs, no folders'
     } else {

@@ -1,67 +1,118 @@
-<ui:FluentWindow x:Class="KomorebiDashboard.MainWindow"
+<Window x:Class="KomorebiDashboard.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:KomorebiDashboard.Views"
         xmlns:ui="clr-namespace:Wpf.Ui.Controls;assembly=Wpf.Ui"
         Title="Komorebi Admin Dashboard"
-        Height="720" Width="1100"
+        Height="760" Width="1180"
+        MinHeight="520" MinWidth="900"
         WindowStartupLocation="CenterScreen"
-        ExtendsContentIntoTitleBar="True"
-        WindowBackdropType="Mica">
+        Icon="pack://application:,,,/KomorebiDashboard;component/Resources/logo.ico"
+        Background="{DynamicResource ApplicationBackgroundBrush}"
+        Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+        TextOptions.TextFormattingMode="Display"
+        UseLayoutRounding="True">
   <!--
-    D21 BLACK SCREEN FIX: FluentWindow with Mica backdrop requires a non-null,
-    opaque Background brush to composite content correctly. Without it, the DWM
-    Mica layer renders but WPF content is transparent → black screen.
+    A standard Window, NOT FluentWindow. FluentWindow applies a DWM backdrop
+    (Mica/Acrylic) behind WPF content, and on this target that composites to a
+    fully black client area — the app launches, reports a live window handle, and
+    shows nothing. The visibility probe in tests/ticket12-runtime.tests.ps1 exists
+    because that failure is invisible to a startup assertion. For DialogStyle
+    hints without the backdrop, WindowCornerPreference is set in code-behind.
 
-    ApplicationBackgroundBrush is provided by ThemesDictionary and resolves to
-    the correct Dark/Light surface colour. Setting it here ensures content is
-    always visible regardless of theme state at startup.
+    Icon= is the taskbar/Alt-Tab icon; the header logo below is the brand mark.
 
-    ExtendsContentIntoTitleBar=True is REQUIRED by FluentWindow when backdrop
-    is Mica/Acrylic/Tabbed. Removing it causes InvalidOperationException.
+    TextFormattingMode=Display + UseLayoutRounding are priority-1/2 decisions:
+    Display-mode text layout aligns glyph runs to whole pixels instead of
+    sub-pixel positions, which measurably reduces the cost of the re-layout the
+    console triggers while a script streams.
   -->
-  <ui:FluentWindow.Background>
-    <DynamicResource ResourceKey="ApplicationBackgroundBrush" />
-  </ui:FluentWindow.Background>
-
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
 
-    <ui:TitleBar Grid.Row="0"
-                 Title="Komorebi Admin Dashboard"
-                 ShowMinimize="True"
-                 ShowMaximize="False"
-                 ShowClose="True" />
+    <!-- ================================================================
+         Header: logo, product name, version, and the two app-wide actions.
+         ================================================================ -->
+    <Border Grid.Row="0"
+            Background="{DynamicResource ControlFillColorDefaultBrush}"
+            BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+            BorderThickness="0,0,0,1">
+      <!-- The accent band. A second layer rather than a Background on the Border
+           above, because the gradient brush is REPLACED wholesale every time the
+           accent changes (a GradientStop cannot track a DynamicResource) and the
+           base fill must not be lost when that happens.
 
-    <Grid Grid.Row="1">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="*" />
-      </Grid.RowDefinitions>
+           This is what gives the accent a presence in the window chrome instead
+           of only on buttons, and it is why K1cHeaderGradientBrush is published
+           by ThemeService at all. -->
+      <Border Background="{DynamicResource K1cHeaderGradientBrush}" Padding="16,11">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
 
-      <Grid Grid.Row="0" Margin="12,8,12,0">
-        <TextBlock Text="Komorebi Admin Dashboard" FontSize="15" FontWeight="SemiBold"
-                   VerticalAlignment="Center" />
-        <Button x:Name="ThemeToggle"
-                Content="Toggle theme"
-                HorizontalAlignment="Right"
-                Padding="12,5"
-                Click="OnToggleTheme"
-                ToolTip="Switch between the Dark and Light Fluent themes" />
+        <Image Grid.Column="0"
+               Source="pack://application:,,,/KomorebiDashboard;component/Resources/logo.ico"
+               Width="30" Height="30"
+               Margin="0,0,12,0"
+               VerticalAlignment="Center"
+               RenderOptions.BitmapScalingMode="HighQuality" />
+
+        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+          <TextBlock Text="Komorebi Admin Dashboard"
+                     FontSize="15.5" FontWeight="SemiBold"
+                     Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+          <TextBlock x:Name="VersionText"
+                     FontSize="11.5"
+                     Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+        </StackPanel>
+
+        <!-- Two app-wide appearance actions, side by side because they are the
+             same kind of thing: each steps to the next value immediately.
+
+             Factory Reset is deliberately NOT here. It was, and it does not
+             belong: it is a one-off destructive action sitting permanently in the
+             window chrome next to a harmless theme toggle, which is exactly the
+             arrangement that gets clicked by accident. It lives in Settings,
+             under a "Reset" heading, where a destructive action is expected. -->
+        <ui:Button Grid.Column="2" x:Name="ThemeToggle"
+                   Content="Toggle Theme"
+                   Appearance="Secondary"
+                   Click="OnToggleTheme"
+                   Margin="0,0,8,0"
+                   ToolTip="Switch between the Dark and Light themes" />
+        <ui:Button Grid.Column="3" x:Name="ColorToggle"
+                   Content="Toggle Color"
+                   Appearance="Secondary"
+                   Click="OnToggleColor"
+                   ToolTip="Step through the accent colors" />
       </Grid>
+      </Border>
+    </Border>
 
-      <TabControl Grid.Row="1" Margin="8">
-        <TabItem Header="Kill and Start"><views:KillStartView x:Name="KillStartView" /></TabItem>
-        <TabItem Header="Restart and Reloading"><views:RestartView x:Name="RestartView" /></TabItem>
-        <TabItem Header="Settings"><views:SettingsView x:Name="SettingsView" /></TabItem>
-        <TabItem Header="Customization"><views:CustomizationView x:Name="CustomizationView" /></TabItem>
-        <TabItem Header="AutoHotkey Scripts"><views:AutoHotkeyView x:Name="AutoHotkeyView" /></TabItem>
-        <TabItem Header="Debugging"><views:DebuggingView x:Name="DebuggingView" /></TabItem>
-        <TabItem Header="Uninstall and Cleanup"><views:UninstallView x:Name="UninstallView" /></TabItem>
-      </TabControl>
-    </Grid>
+    <!-- ================================================================
+         The seven tabs. Order is ADR-0009's, and the tab strip's selected
+         style comes from the shared TabItem style in App.xaml.
+         ================================================================ -->
+    <TabControl Grid.Row="1" Margin="10,8,10,10"
+                x:Name="Tabs"
+                Background="Transparent"
+                BorderThickness="0,1,0,0"
+                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
+      <TabItem Header="Kill and Start"><views:KillStartView x:Name="KillStartView" /></TabItem>
+      <TabItem Header="Restart and Reloading"><views:RestartView x:Name="RestartView" /></TabItem>
+      <TabItem Header="Settings"><views:SettingsView x:Name="SettingsView" /></TabItem>
+      <TabItem Header="Customization"><views:CustomizationView x:Name="CustomizationView" /></TabItem>
+      <TabItem Header="AutoHotkey Scripts"><views:AutoHotkeyView x:Name="AutoHotkeyView" /></TabItem>
+      <TabItem Header="Debugging"><views:DebuggingView x:Name="DebuggingView" /></TabItem>
+      <TabItem Header="Uninstall and Cleanup"><views:UninstallView x:Name="UninstallView" /></TabItem>
+      <TabItem Header="About"><views:AboutView x:Name="AboutView" /></TabItem>
+    </TabControl>
   </Grid>
-</ui:FluentWindow>
+</Window>

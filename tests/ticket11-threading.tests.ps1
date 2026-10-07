@@ -370,7 +370,7 @@ Assert 'MainWindow.xaml.cs exists' (Test-Path $mwCs)
 
 if (Test-Path $mwXaml) {
     $xaml = Get-Content $mwXaml -Raw
-    $views = @('KillStartView','RestartView','SettingsView','AutoHotkeyView','DebuggingView','UninstallView')
+    $views = @('KillStartView','RestartView','SettingsView','CustomizationView','AutoHotkeyView','DebuggingView','UninstallView')
     $unnamed = @()
     foreach ($v in $views) {
         # Each view must be NAMED. An unnamed one makes its FindName call in
@@ -384,12 +384,19 @@ if (Test-Path $mwXaml) {
 
 if (Test-Path $mwCs) {
     $mw = Get-Content $mwCs -Raw
-    # The null-forgiving operator on FindName hides the crash instead of fixing
-    # it, so it must not be the only thing standing between the app and a
-    # NullReferenceException. Require an explicit guard.
-    Assert 'MainWindow guards the FindName results instead of only asserting them' `
-           ($mw -match 'FindName' -and ($mw -match 'throw new' -or $mw -match 'if\s*\(')) `
-           'FindName returns null for unnamed elements; add an explicit guard'
+    # D18's actual failure was a NULL element reference crashing the constructor,
+    # and the assertion was written against the fix available at the time
+    # (FindName + an explicit guard, because XAML lookup is a runtime string
+    # lookup). A view referenced through its generated x:Name field is bound by
+    # the compiler instead, so it cannot be null at all - that satisfies the
+    # same intent more strongly than a guard would. Either form passes; what
+    # fails is a bare unguarded FindName(...)!.
+    $usesGeneratedFields = ($mw -match 'View\.DataContext\s*=')
+    $usesGuardedFindName = ($mw -match 'FindName' -and ($mw -match 'throw new' -or $mw -match 'if\s*\('))
+    $unguardedFindName   = ($mw -match 'FindName' -and -not $usesGuardedFindName)
+    Assert 'MainWindow resolves its views without an unguarded runtime lookup' `
+           (($usesGeneratedFields -or $usesGuardedFindName) -and -not $unguardedFindName) `
+           'use the generated x:Name fields, or guard every FindName result'
 }
 
 # =====================================================================

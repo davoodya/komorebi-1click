@@ -1,7 +1,10 @@
 <Application x:Class="KomorebiDashboard.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:ui="clr-namespace:Wpf.Ui.Markup;assembly=Wpf.Ui">
+             xmlns:ui="clr-namespace:Wpf.Ui.Markup;assembly=Wpf.Ui"
+             xmlns:controls="clr-namespace:Wpf.Ui.Controls;assembly=Wpf.Ui"
+             xmlns:models="clr-namespace:KomorebiDashboard.Models"
+             xmlns:conv="clr-namespace:KomorebiDashboard.Converters">
   <!--
     No StartupUri on purpose: App.OnStartup decides between the GUI and the CLI
     twin from the command line, so the window cannot be started from markup.
@@ -30,12 +33,407 @@
     (MC3074 "tag 'ThemesDictionary' does not exist in XML namespace") even after
     the URI was corrected. clr-namespace is resolved by the compiler directly
     and does not depend on that mapping.
+
+    THE STYLES BELOW ARE THE APP'S WHOLE VISUAL SYSTEM.
+    Every tab composes these, which is why the seven tabs look and behave like
+    one product instead of seven. Nothing here hardcodes a color: every brush is
+    a DynamicResource, either from WPF-UI's theme dictionary (so it follows
+    Dark/Light) or from ThemeService's K1c* accent keys (so it follows the
+    Customization tab's Accent Color). Adding a literal color to this file is
+    the bug this comment exists to prevent.
   -->
   <Application.Resources>
     <ResourceDictionary>
       <ResourceDictionary.MergedDictionaries>
         <ui:ThemesDictionary />
+        <ui:ControlsDictionary />
       </ResourceDictionary.MergedDictionaries>
+
+      <!-- ================================================================
+           Converters
+           ================================================================ -->
+      <conv:BoolToVisibilityConverter x:Key="K1cBoolToVisibility" />
+      <conv:InverseBoolToVisibilityConverter x:Key="K1cInverseBoolToVisibility" />
+      <conv:StringToVisibilityConverter x:Key="K1cStringToVisibility" />
+
+      <!-- ================================================================
+           Typography
+           ================================================================ -->
+
+      <!-- Tab heading, one per tab: the only large text on the page. -->
+      <Style x:Key="K1cPageTitle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="19" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="Margin" Value="0,0,0,4" />
+      </Style>
+
+      <!-- One sentence under the heading: what the tab is for. -->
+      <Style x:Key="K1cPageSubtitle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="Margin" Value="0,0,0,14" />
+      </Style>
+
+      <!-- A group of rows inside a tab (e.g. "Startup tasks"). -->
+      <Style x:Key="K1cSectionTitle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        <Setter Property="Margin" Value="2,10,0,8" />
+      </Style>
+
+      <!-- ================================================================
+           Row scaffolding
+           These are the reason every tab has the same shape: a title, an
+           optional one-line description, and the controls, stacked vertically.
+           ================================================================ -->
+
+      <!-- One setting row. Fill color, hairline border, no accent: a row is
+           chrome, and accent is reserved for selection and primary actions. -->
+      <Style x:Key="K1cRow" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ControlElevationBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="Padding" Value="14,11" />
+        <Setter Property="Margin" Value="0,0,0,6" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+      </Style>
+
+      <!-- The row's name. -->
+      <Style x:Key="K1cRowTitle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="13.5" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+      </Style>
+
+      <!-- The row's explanation, or its live value. -->
+      <Style x:Key="K1cRowDescription" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+      </Style>
+
+      <!-- "read-only" badge on a diagnostic row. Accent-tinted, not colored
+           literally, so it tracks the chosen accent like everything else. -->
+      <Style x:Key="K1cBadge" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource K1cAccentSubtleBrush}" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Padding" Value="7,2" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+      </Style>
+      <Style x:Key="K1cBadgeText" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="10.5" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource K1cAccentBrush}" />
+      </Style>
+
+      <!-- ================================================================
+           Controls
+           ================================================================ -->
+
+      <!-- Global default for WPF-UI buttons: rounded, comfortable, and sized by
+           content. Losing this makes every button stock-WPF square.
+
+           CornerRadius 6 with a 13px face and tighter horizontal padding is the
+           Windows Settings / WinUI 3 shape: those buttons read as small rounded
+           rectangles rather than the wide pill the previous 14,7 padding
+           produced. Every button in the app inherits this, so the look is set
+           once instead of per button. -->
+      <Style TargetType="{x:Type controls:Button}" BasedOn="{StaticResource {x:Type controls:Button}}">
+        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="Padding" Value="13,6" />
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+      </Style>
+
+      <!-- The one button per row that actually runs something. Primary so the
+           accent marks the action, exactly as it marks the selected tab. -->
+      <Style x:Key="K1cRunButton" TargetType="controls:Button" BasedOn="{StaticResource {x:Type controls:Button}}">
+        <Setter Property="Appearance" Value="Primary" />
+        <Setter Property="MinWidth" Value="104" />
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="HorizontalAlignment" Value="Right" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+      </Style>
+
+      <Style x:Key="K1cSecondaryButton" TargetType="controls:Button" BasedOn="{StaticResource {x:Type controls:Button}}">
+        <Setter Property="Appearance" Value="Secondary" />
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="HorizontalAlignment" Value="Right" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+      </Style>
+
+      <!-- The confirming button in a dialog. Same accent treatment as
+           K1cRunButton, named separately because the two answer different
+           questions: "do the work" versus "accept this value". -->
+      <Style x:Key="K1cPrimaryButton" TargetType="controls:Button" BasedOn="{StaticResource {x:Type controls:Button}}">
+        <Setter Property="Appearance" Value="Primary" />
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="HorizontalAlignment" Value="Right" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+      </Style>
+
+      <!-- A destructive or irreversible action (Factory Reset). Caution
+           appearance rather than Danger: this is recoverable-by-reinstall, not
+           data loss, and a red button for it would devalue the red on the rows
+           that really can lose work. -->
+      <Style x:Key="K1cCautionButton" TargetType="controls:Button" BasedOn="{StaticResource {x:Type controls:Button}}">
+        <Setter Property="Appearance" Value="Caution" />
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="HorizontalAlignment" Value="Right" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+      </Style>
+
+      <!-- The small transparent button in the console header. -->
+      <Style x:Key="K1cGhostButton" TargetType="controls:Button" BasedOn="{StaticResource {x:Type controls:Button}}">
+        <Setter Property="Appearance" Value="Transparent" />
+        <Setter Property="Padding" Value="10,3" />
+        <Setter Property="MinHeight" Value="26" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="FontSize" Value="11.5" />
+        <Setter Property="FontWeight" Value="Normal" />
+      </Style>
+
+      <!-- ================================================================
+           Toggle switch
+           The Customization tab's on/off rows. Themed through the theme
+           resources rather than a literal color, so it follows Dark/Light and
+           turns accent-tinted when on (see the ToggleSwitch style below).
+           ================================================================ -->
+      <Style x:Key="K1cToggle" TargetType="ToggleButton">
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="ToggleButton">
+              <!-- A switch: a track with a knob that slides. The track color is
+                   a theme brush off-state and the accent on-state, which is the
+                   WinUI switch behaviour the request asked for. -->
+              <Border x:Name="Track"
+                      Width="42" Height="22"
+                      CornerRadius="11"
+                      Background="{DynamicResource ControlFillColorTertiaryBrush}"
+                      BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                      BorderThickness="1"
+                      SnapsToDevicePixels="True">
+                <Ellipse x:Name="Knob"
+                         Width="16" Height="16"
+                         Fill="{DynamicResource TextFillColorSecondaryBrush}"
+                         HorizontalAlignment="Left"
+                         Margin="3,0,0,0" />
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                  <Setter TargetName="Track" Property="Background" Value="{DynamicResource K1cAccentBrush}" />
+                  <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource K1cAccentBrush}" />
+                  <Setter TargetName="Knob"  Property="Fill" Value="#FFFFFF" />
+                  <Setter TargetName="Knob"  Property="HorizontalAlignment" Value="Right" />
+                  <Setter TargetName="Knob"  Property="Margin" Value="0,0,3,0" />
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Track" Property="Opacity" Value="0.85" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter TargetName="Track" Property="Opacity" Value="0.4" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <!-- A row's value box: one line, room to breathe, resolved against the
+           theme so it is legible in Light and Dark alike. -->
+      <Style x:Key="K1cValueBox" TargetType="controls:TextBox" BasedOn="{StaticResource {x:Type controls:TextBox}}">
+        <Setter Property="MinHeight" Value="34" />
+        <Setter Property="MinWidth" Value="210" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="FontSize" Value="13" />
+      </Style>
+
+      <!-- The console's drag grip: visual properties only.
+           The grip's inner lines are declared INLINE in ConsolePane.xaml rather
+           than as a Child setter here. A Style setter holding a UIElement creates
+           one shared instance, and a UIElement may only have one parent — with the
+           pane hosted by every tab, the second tab to load would throw
+           "already the logical child of another element".
+           Cursor=SizeNS and the 22px height are the real affordances. -->
+      <Style x:Key="K1cGrip" TargetType="Border">
+        <Setter Property="Width" Value="14" />
+        <Setter Property="Height" Value="22" />
+        <Setter Property="Cursor" Value="SizeNS" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="ToolTipService.InitialShowDelay" Value="600" />
+      </Style>
+
+      <!-- Monospaced script output. Not themed on purpose: console text reads as
+           code, and the tertiary/secondary fills keep it quiet behind the
+           controls it reports on. -->
+      <Style x:Key="K1cConsole" TargetType="TextBox">
+        <Setter Property="IsReadOnly" Value="True" />
+        <Setter Property="AcceptsReturn" Value="True" />
+        <Setter Property="TextWrapping" Value="NoWrap" />
+        <!-- Both are app-owned resources that ThemeService republishes, so the
+             Customization tab's console typeface and size reach this control with
+             no visual-tree walk: DynamicResource re-resolves on assignment. -->
+        <Setter Property="FontFamily" Value="{DynamicResource K1cConsoleFontFamily}" />
+        <Setter Property="FontSize" Value="{DynamicResource K1cConsoleFontSize}" />
+        <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+        <Setter Property="HorizontalScrollBarVisibility" Value="Auto" />
+        <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ControlElevationBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="10,8" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+      </Style>
+
+      <!-- A toggle row's radio button: labelled, and laid out by the row. -->
+      <Style TargetType="RadioButton">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+        <Setter Property="Margin" Value="0,0,18,0" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+      </Style>
+
+      <!-- ================================================================
+           The verb row template
+           Every tab that lists verbs binds this. One template means a row
+           cannot look or behave differently from tab to tab: the title, the
+           tooltip, the read-only badge, the optional value box and the Run
+           button are defined once.
+
+           The row's controls bind through the ItemsControl's DataContext only
+           for the Run command, which the tab's ViewModel owns; everything that
+           is per-row (the typed value, the hint, the labels) binds to the item,
+           so two rows can never share one value box.
+           ================================================================ -->
+      <DataTemplate x:Key="K1cVerbRowTemplate" DataType="{x:Type models:VerbRow}">
+        <Border Style="{DynamicResource K1cRow}" ToolTip="{Binding Help}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Left: what this row does. -->
+            <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,14,0">
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding Label}" Style="{DynamicResource K1cRowTitle}" />
+                <!-- Diagnostics are visibly not actions. -->
+                <Border Style="{DynamicResource K1cBadge}" Margin="8,0,0,0"
+                        Visibility="{Binding IsReadOnly, Converter={StaticResource K1cBoolToVisibility}}">
+                  <TextBlock Text="READ-ONLY" Style="{DynamicResource K1cBadgeText}" />
+                </Border>
+              </StackPanel>
+              <TextBlock Text="{Binding Help}" Style="{DynamicResource K1cRowDescription}" Margin="0,2,0,0" />
+            </StackPanel>
+
+            <!-- Right: the value box (only for verbs that take one) and the action. -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+              <controls:TextBox
+                  Margin="0,0,8,0"
+                  Text="{Binding Argument, UpdateSourceTrigger=PropertyChanged}"
+                  PlaceholderText="{Binding Hint}"
+                  Visibility="{Binding AcceptsUserArguments, Converter={StaticResource K1cBoolToVisibility}}">
+                <!-- Two shapes from one TextBox: a numeric verb (Set Transparency's
+                     percent) gets a narrow, centered field; everything else the
+                     full-width one.
+
+                     One element with a trigger rather than two TextBoxes: both
+                     would bind Argument, and the hidden one would stay in the
+                     visual tree holding a stale value.
+
+                     InputScope is deliberately NOT set here. It cannot be
+                     assigned as a Setter value inside a ControlTemplate's
+                     trigger — the XAML writer cannot build an InputScope from
+                     text and throws XamlParseException on first template
+                     instantiation, which crashes the app before the window
+                     appears. Digit filtering is enforced in VerbRow instead,
+                     which also covers paste and IME input. -->
+                <controls:TextBox.Style>
+                  <Style TargetType="controls:TextBox" BasedOn="{StaticResource K1cValueBox}">
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding IsNumeric}" Value="True">
+                        <Setter Property="MinWidth" Value="96" />
+                        <Setter Property="MaxWidth" Value="96" />
+                        <Setter Property="TextAlignment" Value="Center" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </controls:TextBox.Style>
+              </controls:TextBox>
+              <controls:Button
+                  Style="{DynamicResource K1cRunButton}"
+                  Content="{Binding ActionLabel}"
+                  MinWidth="104"
+                  Command="{Binding DataContext.RunRowCommand,
+                                    RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                  CommandParameter="{Binding}" />
+            </StackPanel>
+          </Grid>
+        </Border>
+      </DataTemplate>
+
+      <!-- ================================================================
+           Tab strip
+           The selected tab is the accent's most visible use: its background is
+           the accent at 18% and its underline the accent at 65%. Without this,
+           the selected tab is indistinguishable from the unselected ones in
+           Dark — a grey-on-grey header.
+           ================================================================ -->
+      <Style TargetType="TabItem">
+        <Setter Property="Padding" Value="15,9" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Margin" Value="2,0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="TabItem">
+              <Border x:Name="TabBorder"
+                      Background="{TemplateBinding Background}"
+                      BorderThickness="0,0,0,2"
+                      BorderBrush="Transparent"
+                      CornerRadius="5,5,0,0"
+                      Padding="{TemplateBinding Padding}"
+                      SnapsToDevicePixels="True">
+                <ContentPresenter ContentSource="Header"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center" />
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                  <Setter TargetName="TabBorder" Property="Background" Value="{DynamicResource K1cAccentSubtleBrush}" />
+                  <Setter TargetName="TabBorder" Property="BorderBrush" Value="{DynamicResource K1cAccentBorderBrush}" />
+                  <Setter Property="Foreground" Value="{DynamicResource K1cAccentBrush}" />
+                  <Setter Property="FontWeight" Value="SemiBold" />
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="TabBorder" Property="Background" Value="{DynamicResource K1cAccentHoverBrush}" />
+                </Trigger>
+                <MultiTrigger>
+                  <MultiTrigger.Conditions>
+                    <Condition Property="IsSelected" Value="True" />
+                    <Condition Property="IsMouseOver" Value="True" />
+                  </MultiTrigger.Conditions>
+                  <Setter TargetName="TabBorder" Property="Background" Value="{DynamicResource K1cAccentSubtleBrush}" />
+                </MultiTrigger>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter Property="Foreground" Value="{DynamicResource TextFillColorDisabledBrush}" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
     </ResourceDictionary>
   </Application.Resources>
 </Application>

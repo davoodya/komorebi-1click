@@ -7,8 +7,8 @@ namespace KomorebiDashboard;
 /// <summary>
 /// Entry point for BOTH surfaces (ADR-0013). The GUI and the CLI twin are the
 /// same executable: a verb on the command line dispatches through the same
-/// registry and the same <c>ScriptService</c> the buttons use, so the two cannot
-/// behave differently. Only the presentation differs.
+/// registry and the same <see cref="ScriptService"/> the buttons use, so the two
+/// cannot behave differently. Only the presentation differs.
 ///
 /// NOTE ON ENTRY POINT: this class deliberately does NOT declare a Main. The
 /// WPF SDK generates its own <c>App.g.cs</c> entry point for an ApplicationDefinition
@@ -23,11 +23,17 @@ public partial class App : Application
     private int _cliExitCode;
 
     /// <summary>
+    /// Persisted user preferences, owned by <see cref="SettingsStore"/> so the
+    /// seven tabs and the CLI twin all read the same instance rather than each
+    /// keeping a copy that can drift.
+    /// </summary>
+    internal static DashboardSettings Settings => SettingsStore.Current;
+
+    /// <summary>
     /// Process start time, used to report the real startup cost. ADR-0015 ranks
-    /// "maximum speed" as priority 1 and this ticket requires the figure to be
-    /// MEASURED, not assumed.
+    /// "maximum speed" as priority 1 and this must be MEASURED, not assumed.
     ///
-    /// <para>Deliberately seeded from <see cref="Process.GetCurrentProcess"/>'s
+    /// <para>Deliberately seeded from <see cref="System.Diagnostics.Process"/>'s
     /// StartTime rather than from a stopwatch begun inside this class. A static
     /// field initializer runs on first touch of App, which is AFTER the CLR has
     /// already loaded WPF — so a stopwatch started there reports only the
@@ -52,6 +58,16 @@ public partial class App : Application
     /// </summary>
     protected override async void OnStartup(StartupEventArgs e)
     {
+        // A crash log, installed before anything else can fail.
+        //
+        // A XAML error inside a template is NOT a build error: the template is
+        // parsed when it is first instantiated, so a bad Setter inside a
+        // ControlTemplate compiles cleanly and then kills the process on the
+        // first render. Without this handler the only trace is a WER record with
+        // no line number; with it, the exact XAML line is written to a file
+        // beside the executable.
+        InstallCrashLogging();
+
         var args = Environment.GetCommandLineArgs().Skip(1).ToArray();
 
         // CLI mode: a verb was supplied. Exit with the script's own exit code so
@@ -71,10 +87,16 @@ public partial class App : Application
 
         base.OnStartup(e);
 
-        // Theme FIRST, then show the window. Applying it after Show() would
-        // make the user watch the default light palette repaint into dark —
-        // a priority-2 (smoothness) regression caused by priority-4 work.
-        ThemeService.ApplyDefault();
+        // Load persisted settings BEFORE applying anything visual, so the first
+        // frame the user sees is already their configuration rather than the
+        // defaults repainting a moment later.
+        SettingsStore.Load();
+
+        // Theme, accent, typeface and scale FIRST, then show the window.
+        // Applying them after Show() would make the user watch the default
+        // palette repaint — a priority-2 (smoothness) regression caused by
+        // priority-4 work.
+        ThemeService.ApplyFromSettings(Settings);
 
         MainWindow = new MainWindow();
         MainWindow.Show();
@@ -86,8 +108,105 @@ public partial class App : Application
         Console.WriteLine($"[KomorebiDashboard] window ready in {startupMs} ms");
     }
 
+    /// <summary>
+    /// Write unhandled exceptions to a log beside the executable.
+    ///
+    /// WHY THIS EXISTS: a XAML fault inside a ControlTemplate is deferred to the
+    /// moment the template is first applied, so it is invisible to the compiler.
+    /// The process dies during the first layout pass and the only Windows-side
+    /// evidence is a WER record that names no XAML line. The <see cref="Exception"/>
+    /// raised by a <c>XamlParseException</c> carries the line and position, so
+    /// catching it here turns an unattributable crash into a one-line diagnosis.
+    /// </summary>
+    private void InstallCrashLogging()
+    {
+        DispatcherUnhandledException += (_, args) =>
+        {
+            WriteCrashLog(args.Exception);
+
+            // Handled = true keeps the process alive so the log is flushed and the
+            // user sees a message instead of a silent disappearance.
+            args.Handled = true;
+
+            MessageBox.Show(
+                "The Dashboard hit an unexpected error and could not continue." +
+                Environment.NewLine + Environment.NewLine +
+                args.Exception.Message + Environment.NewLine + Environment.NewLine +
+                $"Details were written to:{Environment.NewLine}{CrashLogPath}",
+                "Komorebi Dashboard",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+
+            Current?.Shutdown(1);
+        };
+
+        // Failures on a worker thread do not reach DispatcherUnhandledException.
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            if (args.ExceptionObject is Exception ex) WriteCrashLog(ex);
+        };
+    }
+
+    /// <summary>Where the crash log is written: beside the running executable.</summary>
+    private static string CrashLogPath
+    {
+        get
+        {
+            try
+            {
+                var exe = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+                var dir = Path.GetDirectoryName(exe);
+                if (!string.IsNullOrWhiteSpace(dir)) return Path.Combine(dir, "KomorebiDashboard.crash.log");
+            }
+            catch
+            {
+                // Falls through to the temp path below.
+            }
+
+            return Path.Combine(Path.GetTempPath(), "KomorebiDashboard.crash.log");
+        }
+    }
+
+    private static void WriteCrashLog(Exception ex)
+    {
+        try
+        {
+            var sb = new System.Text.StringBuilder();
+
+            sb.AppendLine($"--- {DateTime.Now:yyyy-MM-dd HH:mm:ss} ---");
+            sb.AppendLine($"version: {typeof(App).Assembly.GetName().Version}");
+
+            // Walk the whole InnerException chain. XamlParseException wraps the
+            // useful XamlObjectWriterException, and it is the OUTER one that
+            // carries LineNumber/LinePosition — so both halves are needed to
+            // locate a fault: the line from here, the cause from the inner one.
+            for (var e = ex; e is not null; e = e.InnerException)
+            {
+                sb.AppendLine($"{e.GetType().FullName}: {e.Message}");
+
+                if (e is System.Windows.Markup.XamlParseException xaml)
+                {
+                    sb.AppendLine($"    XAML line {xaml.LineNumber}, position {xaml.LinePosition}");
+                    if (xaml.BaseUri is not null) sb.AppendLine($"    base uri: {xaml.BaseUri}");
+                }
+            }
+
+            sb.AppendLine(ex.ToString());
+
+            File.AppendAllText(CrashLogPath, sb.ToString());
+        }
+        catch
+        {
+            // A failed crash log must never mask the original failure.
+        }
+    }
+
     private static async Task<int> RunCliAsync(string[] args)
     {
+        // The CLI twin reads the same preferences (a verb is dispatched with the
+        // same library the GUI uses), so the store is loaded here too.
+        SettingsStore.Load();
+
         var parser = new CommandLineParser();
         var parsed = parser.Parse(args);
 

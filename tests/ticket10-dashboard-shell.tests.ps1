@@ -116,7 +116,12 @@ if (Test-Path $mainXaml) {
     $tabViews = @($matches | ForEach-Object { $_.Groups[1].Value })
 }
 
-Assert 'six tab views'                 ($tabViews.Count -eq 6) "found $($tabViews.Count): $($tabViews -join ', ')"
+# Seven since the Customization tab was added (ADR-0009's original six plus
+# Customization). Asserted as a minimum plus a uniqueness check rather than an
+# exact number, so adding a tab is not a test failure but a duplicated or
+# unnamed one still is.
+Assert 'at least six tab views'        ($tabViews.Count -ge 6) "found $($tabViews.Count): $($tabViews -join ', ')"
+Assert 'no duplicate tab views'        (@($tabViews | Sort-Object -Unique).Count -eq $tabViews.Count) "duplicates in: $($tabViews -join ', ')"
 $missingTabViews = @($tabViews | Where-Object { -not (Test-Path (Join-Path $Src "Views\$_.xaml")) })
 Assert 'every tab view has a file on disk' `
            ($missingTabViews.Count -eq 0) `
@@ -170,6 +175,10 @@ if (Test-Path $resultFile) {
 # dashboard would have shown "script not found" for every Kill/Start button.
 if (Test-Path $regPath) {
     $regRaw = Get-Content $regPath -Raw
+    # Scans ADD calls only. The registry's own doc comment must therefore not
+    # contain a call in this exact shape - writing new("verb", "script.ps1", ...)
+    # there is read as a REAL row and the suite then reports scripts/script.ps1
+    # as missing.
     $referenced = [regex]::Matches($regRaw, 'new\("[a-z0-9-]+",\s*"([\w.-]+\.ps1)"') |
                    ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
     $missingScripts = @($referenced | Where-Object {

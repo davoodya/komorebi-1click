@@ -21,7 +21,10 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>KomorebiDashboard</AssemblyName>
     <RootNamespace>KomorebiDashboard</RootNamespace>
-    <ApplicationIcon />
+    <!-- Both icons are shipped as resources. logo.ico is the product mark used for
+         the window (title bar, taskbar) and for the executable itself; icon.ico
+         stays because the installer and shortcuts reference it. -->
+    <ApplicationIcon>Resources\logo.ico</ApplicationIcon>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
@@ -103,4 +106,8 @@
     <PublishDir>$(MSBuildThisFileDirectory)..\..\releases\</PublishDir>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Resource Include="Resources\icon.ico" />
+    <Resource Include="Resources\logo.ico" />
+  </ItemGroup>
 </Project>
