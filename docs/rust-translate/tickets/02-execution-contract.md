@@ -89,3 +89,21 @@ its findings on ticket 03, which owns the CLI surface — including the two Wind
 facts that make it non-trivial (the binary has no console, so it must
 `AttachConsole`; and `GenerateConsoleCtrlEvent` can deliver Ctrl+Break but not a
 targeted Ctrl+C).
+
+### Proof technique: two corrections
+
+**Do not prove a clean build with file hashes.** A `git worktree add --detach` at
+`9932623` held **0 dirty files** and built to a 6,420,992-byte artifact, so the commit
+is self-sufficient. But two consecutive builds of that *identical* commit produced
+different SHA-256 hashes (`1CBD4C3D…BBDDEE0`, then `7E8FA9D3…D72F6439`). The build is
+not byte-reproducible: `build.ps1` stamps HEAD's short sha in via `DASHBOARD_GIT_SHA`
+and the PE carries linker metadata. A hash mismatch between an in-tree and a clean
+build is expected and proves nothing; 0-dirty-files plus build exit 0 plus a
+functional run is the valid proof. (Also: rebuild in-tree after committing, or the
+artifact's `gitSha` still names the previous commit.)
+
+**Timing thresholds are load-sensitive.** With three concurrent release builds
+running, one probe pass showed 3 of 26 failing and one UI pass 1 of 11; both re-ran
+26/26 and 11/11 on an idle machine. The tight tolerance assertions (3 s budget
+honoured, worst inter-batch gap < 250 ms, cancel-to-verdict) are the ones that move.
+A failure there on a loaded machine is inconclusive — re-run before believing it.

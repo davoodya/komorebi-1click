@@ -90,15 +90,36 @@ cannot).
 * **Ticket 09 (console pane)** owns the console-visual work; the `ScriptResult`
   payload now carries the stop flags it needs.
 
+### Clean-checkout proof, and a correction to how it must be run
+
+A `git worktree add --detach 9932623` checkout held **0 dirty files**, and the full
+four-phase build contract ran there and exited **0**, producing a 6,420,992-byte
+artifact. So the commit is self-sufficient: every file the build needs is committed.
+
+**Do not use file hashes to prove this — the build is not byte-reproducible.** Two
+consecutive builds of the *identical* commit (HEAD `9932623`, same tree, same
+toolchain, only `-SkipRestore` differing) produced
+`1CBD4C3D…BBDDEE0` and `7E8FA9D3…D72F6439` — different every time, because `build.ps1`
+compiles HEAD's short sha in (`DASHBOARD_GIT_SHA`, displayed as `app_info.gitSha`)
+and the PE image carries linker metadata. An in-tree/clean-checkout hash mismatch is
+therefore expected and proves nothing either way. The valid proof is: **0 dirty
+files in the checkout, build exit 0 from it, plus a functional run of the artifact**.
+Note the in-tree artifact must be rebuilt after a commit, or the sha stamped in it
+still names the previous commit.
+
 ### Honest limitations
 
-* `npm audit` was not run (per instruction: skip unless it blocks). The dependency
-  set is exact-pinned with a committed lockfile, but it is not audited.
+* **Strict timing thresholds are load-sensitive.** Run under three concurrent release
+  builds, one probe run reported 3 of 26 failing and one UI run reported 1 of 11 —
+  both re-ran clean (26/26, 11/11) on an idle machine, twice. The affected assertions
+  are the tightest tolerances (timeout-honoured-near-3 s, worst inter-batch gap under
+  250 ms, cancel-to-verdict). Treat a failure there on a busy machine as inconclusive
+  and re-run before believing it; a failure on an idle machine is real.
+* `npm audit` reports **0 vulnerabilities** both with `--omit=dev` and across the full
+  tree, so nothing needed fixing.
 * Concurrency is bounded per run id by the registry, and the busy flag still stops a
   second *verb* from starting. The window therefore still runs one verb at a time;
   the registry's independence is proven by the Rust suite, not by the UI.
-* No clean-checkout worktree proof was run for this round. The build contract
-  (`build.ps1` phases, including the companion-file guard) passed in-tree.
 
 ### Commits
 
