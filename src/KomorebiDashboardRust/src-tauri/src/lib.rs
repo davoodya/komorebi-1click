@@ -1,13 +1,143 @@
 use serde::Serialize;
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
+    sync::{LazyLock, Mutex},
     time::{Duration, Instant},
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, BufReader},
     process::Command,
-    sync::mpsc,
+    sync::{mpsc, oneshot},
 };
+
+/// The wall-clock budget a run gets when it does not carry one of its own.
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Exit code for a run the dashboard stopped because it overran its budget.
+/// 124 is the conventional "timed out" code, and the spec fixes it for this case.
+pub const TIMEOUT_EXIT_CODE: i32 = 124;
+
+/// Exit code for a run the user stopped. 130 is the conventional interrupt code,
+/// so a cancelled run is never mistaken for a script that failed on its own.
+pub const CANCELLED_EXIT_CODE: i32 = 130;
+
+/// The budget for a run.
+///
+/// `demo-stream` documents that it accepts `-TimeoutSeconds` "for symmetry with
+/// the dashboard's own timeout option; this script does not enforce it itself.
+/// The CALLER enforces it, which is the behaviour under test." So a run that
+/// carries `-TimeoutSeconds <n>` sets its own budget, and everything else gets
+/// [`DEFAULT_TIMEOUT`]. Parsing here — rather than in the fixture — is what keeps
+/// the fixture honest and usable for the timeout probe.
+pub fn timeout_for(arguments: &[String]) -> Duration {
+    let mut remaining = arguments.iter();
+    while let Some(argument) = remaining.next() {
+        if argument.eq_ignore_ascii_case("-TimeoutSeconds") {
+            if let Some(value) = remaining.next() {
+                if let Ok(seconds) = value.parse::<u64>() {
+                    if seconds > 0 {
+                        return Duration::from_secs(seconds);
+                    }
+                }
+            }
+        }
+    }
+    DEFAULT_TIMEOUT
+}
+
+/// Live runs that a `cancel` can reach, keyed by run id.
+///
+/// A registry rather than a per-call token because the cancel arrives on a
+/// different IPC call than the one running the verb: the frontend learns the run
+/// id from the dispatch it made, and the backend has to find that same run again.
+static LIVE_RUNS: LazyLock<Mutex<HashMap<String, oneshot::Sender<()>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Arms a receiver for a run and makes it reachable by [`request_cancel`].
+fn arm_run(run_id: &str) -> oneshot::Receiver<()> {
+    let (sender, receiver) = oneshot::channel();
+    if let Ok(mut live) = LIVE_RUNS.lock() {
+        live.insert(run_id.to_owned(), sender);
+    }
+    receiver
+}
+
+fn disarm_run(run_id: &str) {
+    if let Ok(mut live) = LIVE_RUNS.lock() {
+        live.remove(run_id);
+    }
+}
+
+/// Removes a run from the registry however the run ends, including a panic or an
+/// early return. Without this, a finished run id would linger and a later cancel
+/// would look like it succeeded when nothing was listening.
+struct RunRegistration<'a>(&'a str);
+impl Drop for RunRegistration<'_> {
+    fn drop(&mut self) {
+        disarm_run(self.0);
+    }
+}
+
+/// Ask a live run to stop. Returns false when the run already finished, which is
+/// the honest answer for a cancel that arrived too late.
+pub fn request_cancel(run_id: &str) -> bool {
+    let sender = LIVE_RUNS
+        .lock()
+        .ok()
+        .and_then(|mut live| live.remove(run_id));
+    match sender {
+        Some(sender) => sender.send(()).is_ok(),
+        None => false,
+    }
+}
+
+/// Kill a process together with everything it started.
+///
+/// `/T` is the point, not a flourish: killing only the direct child leaves
+/// grandchildren alive holding the same pipe handles, so the read loops never
+/// finish and a "cancelled" run keeps the caller waiting anyway — exactly the
+/// trap the WPF build hit and documented.
+pub async fn kill_process_tree(pid: u32) {
+    #[cfg(windows)]
+    {
+        let mut kill = Command::new("taskkill.exe");
+        kill.args(["/PID", &pid.to_string(), "/T", "/F"])
+            .creation_flags(0x08000000);
+        let _ = kill.output().await;
+    }
+    #[cfg(not(windows))]
+    {
+        // The direct child is always killed by the caller; only Windows needs a
+        // separate tree walk, and this crate ships on Windows.
+        let _ = pid;
+    }
+}
+
+/// True when a process is still running. Used by the tests to prove that a stop
+/// path left nothing behind.
+pub fn process_exists(pid: u32) -> bool {
+    #[cfg(windows)]
+    {
+        // Scoped: the trait is only needed for this one std command. Importing it
+        // at the top of the file would shadow the inherent method tokio's own
+        // command type uses elsewhere in this module.
+        use std::os::windows::process::CommandExt;
+        let output = std::process::Command::new("tasklist.exe")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+            .creation_flags(0x08000000)
+            .output();
+        match output {
+            Ok(output) => String::from_utf8_lossy(&output.stdout).contains(&format!("\"{pid}\"")),
+            Err(_) => false,
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = pid;
+        false
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct OutputLine {
@@ -26,6 +156,12 @@ pub struct ScriptResult {
     pub run_id: String,
     pub verb: String,
     pub exit_code: i32,
+    /// The user stopped this run. A distinct recorded fact, never inferred from
+    /// the exit code, because the console has to say CANCELLED and not FAILED.
+    pub cancelled: bool,
+    /// The run overran its budget. Also its own fact: a timeout is not a script
+    /// failure, and the spec requires the two to be reported differently.
+    pub timed_out: bool,
     pub duration_ms: u64,
     pub stdout: String,
     pub stderr: String,
@@ -37,10 +173,58 @@ impl ScriptResult {
             run_id: run_id.into(),
             verb: verb.into(),
             exit_code: code,
+            cancelled: false,
+            timed_out: false,
             duration_ms: 0,
             stdout: String::new(),
             stderr: message.clone(),
             summary: message,
+        }
+    }
+    /// The verdict word the console shows. The spec fixes this vocabulary:
+    /// succeeded / FAILED / cancelled / TIMED OUT.
+    pub fn state(&self) -> &'static str {
+        if self.cancelled {
+            "CANCELLED"
+        } else if self.timed_out {
+            "TIMED OUT"
+        } else if self.exit_code == 0 {
+            "succeeded"
+        } else {
+            "FAILED"
+        }
+    }
+}
+
+/// What happened to a script that actually launched.
+///
+/// Internal to the runner: [`run`] turns this into the serializable
+/// [`ScriptResult`]. Kept separate so a test can distinguish "the process was
+/// stopped because it overran" from "the process failed on its own" without
+/// reading a summary string.
+/// `Default` is the "no verdict recorded yet" outcome: exit 0 with neither stop
+/// flag set. Every field's zero value is meaningful here, so it is derived rather
+/// than written out.
+#[derive(Debug, Default)]
+pub struct Outcome {
+    pub exit_code: i32,
+    pub cancelled: bool,
+    pub timed_out: bool,
+    pub duration_ms: u64,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+impl Outcome {
+    pub fn state(&self) -> &'static str {
+        if self.cancelled {
+            "CANCELLED"
+        } else if self.timed_out {
+            "TIMED OUT"
+        } else if self.exit_code == 0 {
+            "succeeded"
+        } else {
+            "FAILED"
         }
     }
 }
@@ -115,18 +299,21 @@ pub async fn run<F: FnMut(OutputBatch)>(
     requested: &str,
     arguments: &[String],
     run_id: &str,
-    mut emit: F,
+    emit: F,
 ) -> ScriptResult {
-    let Some(verb) = registry()
+    let verb = match registry()
         .iter()
         .find(|v| v.verb.eq_ignore_ascii_case(requested))
-    else {
-        return ScriptResult::error(
-            requested,
-            run_id,
-            2,
-            format!("Unknown verb '{requested}'.\n{}", help()),
-        );
+    {
+        Some(verb) => verb,
+        None => {
+            return ScriptResult::error(
+                requested,
+                run_id,
+                2,
+                format!("Unknown verb '{requested}'.\n{}", help()),
+            )
+        }
     };
     // The health tracer must never accept -Action install/restart from either surface.
     if verb.verb == "status" && !arguments.is_empty() {
@@ -146,6 +333,47 @@ pub async fn run<F: FnMut(OutputBatch)>(
             format!("Script not found: {}", script.display()),
         );
     }
+    let outcome = execute(&script, verb, arguments, run_id, emit).await;
+    // Read the verdict before moving the outcome's fields into the result.
+    let state = outcome.state();
+    ScriptResult {
+        run_id: run_id.into(),
+        verb: verb.verb.into(),
+        exit_code: outcome.exit_code,
+        cancelled: outcome.cancelled,
+        timed_out: outcome.timed_out,
+        duration_ms: outcome.duration_ms,
+        stdout: outcome.stdout,
+        stderr: outcome.stderr,
+        summary: format!(
+            "{} {} — exit {} in {:.2}s",
+            verb.label,
+            state,
+            outcome.exit_code,
+            outcome.duration_ms as f64 / 1000.0
+        ),
+    }
+}
+
+/// Launch a script and run it under the no-lag execution contract, returning the
+/// outcome rather than a message.
+///
+/// The contract, in one place:
+/// * output is drained from **both** pipes continuously, so a chatty child can
+///   never block on a full pipe buffer, and is emitted in ~50 ms batches;
+/// * a user cancel and an overrun are distinct facts, and neither overwrites the
+///   other — they are separate booleans on the outcome;
+/// * either stop path kills the **whole process tree**, because a surviving
+///   grandchild keeps the pipe handles open and the run would hang anyway;
+/// * the window stays responsive because none of this runs on the caller's
+///   thread: this is an async task that awaits, never blocks.
+pub async fn execute<F: FnMut(OutputBatch)>(
+    script: &Path,
+    verb: &Verb,
+    arguments: &[String],
+    run_id: &str,
+    mut emit: F,
+) -> Outcome {
     let started = Instant::now();
     let mut command = Command::new(powershell());
     command
@@ -157,10 +385,10 @@ pub async fn run<F: FnMut(OutputBatch)>(
             "Bypass",
             "-File",
         ])
-        .arg(&script)
+        .arg(script)
         .args(verb.fixed_arguments)
         .args(arguments)
-        .current_dir(scripts)
+        .current_dir(script.parent().unwrap_or(Path::new(".")))
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .stdin(std::process::Stdio::null())
@@ -170,14 +398,20 @@ pub async fn run<F: FnMut(OutputBatch)>(
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
-            return ScriptResult::error(
-                requested,
-                run_id,
-                1,
-                format!("Cannot start PowerShell: {error}"),
-            )
+            return Outcome {
+                exit_code: 1,
+                cancelled: false,
+                timed_out: false,
+                duration_ms: started.elapsed().as_millis() as u64,
+                stdout: String::new(),
+                stderr: format!("Cannot start PowerShell: {error}"),
+            }
         }
     };
+    // The child's own pid is what the tree kill targets, so it is captured now,
+    // while the child is certainly alive.
+    let pid = child.id();
+
     let (tx, mut rx) = mpsc::channel(1024);
     let out = tokio::spawn(drain(
         child.stdout.take().expect("piped stdout"),
@@ -189,54 +423,113 @@ pub async fn run<F: FnMut(OutputBatch)>(
         "stderr",
         tx,
     ));
+
+    /// Kills the tree if the run ends without the child having exited on its own.
+    /// Dropped on every return path, including a panic in this task.
+    struct TreeGuard(Option<u32>, bool);
+    impl TreeGuard {
+        async fn disarm(&mut self, child: &mut tokio::process::Child) {
+            // A natural exit needs no kill; a stop path leaves this armed so the
+            // kill happens even if a later `await` in this function is skipped.
+            if child.try_wait().ok().flatten().is_some() {
+                self.1 = false;
+            }
+        }
+    }
+    impl Drop for TreeGuard {
+        fn drop(&mut self) {
+            if !self.1 {
+                return;
+            }
+            let Some(pid) = self.0 else { return };
+            // `Drop` cannot await, so the tree kill is handed to the runtime. This
+            // is the safety net, not the main path: the stop path below kills and
+            // awaits before returning.
+            // Detached on purpose: this runs during unwinding/teardown and there
+            // is nowhere to await it. `kill_process_tree` is also synchronous
+            // enough for the process to be gone by the time the caller returns.
+            drop(tokio::spawn(async move { kill_process_tree(pid).await }));
+        }
+    }
+    let mut guard = TreeGuard(pid, true);
+
+    let cancel_rx = arm_run(run_id);
+    let _registration = RunRegistration(run_id);
+    let budget = timeout_for(arguments);
+    let deadline = tokio::time::sleep(budget);
+    tokio::pin!(deadline);
+    tokio::pin!(cancel_rx);
+
     let mut stdout = String::new();
     let mut stderr = String::new();
-    let mut pending = Vec::new();
+    let mut pending: Vec<OutputLine> = Vec::new();
     let mut timer = tokio::time::interval(Duration::from_millis(50));
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let deadline = tokio::time::sleep(Duration::from_secs(300));
-    tokio::pin!(deadline);
+    let mut cancelled = false;
     let mut timed_out = false;
+
     loop {
         tokio::select! {
             line = rx.recv() => match line {
                 Some(line) => {
                     let buffer = if line.stream == "stdout" { &mut stdout } else { &mut stderr };
-                    buffer.push_str(&line.text); buffer.push('\n'); pending.push(line);
+                    buffer.push_str(&line.text);
+                    buffer.push('\n');
+                    pending.push(line);
                 }
                 None => break,
             },
-            _ = timer.tick() => if !pending.is_empty() { emit(OutputBatch { run_id: run_id.into(), lines: std::mem::take(&mut pending) }); },
+            _ = timer.tick() => if !pending.is_empty() {
+                emit(OutputBatch { run_id: run_id.into(), lines: std::mem::take(&mut pending) });
+            },
+            // The user stopped the run.
+            _ = &mut cancel_rx => {
+                cancelled = true;
+                break;
+            },
             _ = &mut deadline => {
                 timed_out = true;
-                if let Some(pid) = child.id() {
-                    let mut kill = Command::new("taskkill.exe");
-                    kill.args(["/PID", &pid.to_string(), "/T", "/F"]);
-                    #[cfg(windows)]
-                    kill.creation_flags(0x08000000);
-                    let _ = kill.output().await;
-                }
-                let _ = child.kill().await;
-                out.abort(); err.abort();
                 break;
             }
         }
     }
+    // A cancel and an overrun are different facts and neither overwrites the
+    // other. When both fired in the same window the run is recorded as cancelled:
+    // the user's own action is never reported back as a timeout.
+    if cancelled {
+        timed_out = false;
+    }
+
+    // One kill path for both stop reasons, and one more for safety: the guard
+    // fires when the run ended without the child having exited on its own, which
+    // covers the stop arms below, an early return, and a panic.
+    if cancelled || timed_out {
+        if let Some(pid) = pid {
+            kill_process_tree(pid).await;
+        }
+        let _ = child.kill().await;
+    }
+    guard.disarm(&mut child).await;
+
+    // Whatever arrived in the last, partial window is flushed before the verdict,
+    // so the final line of a cancelled or timed-out run is still shown.
     if !pending.is_empty() {
         emit(OutputBatch {
             run_id: run_id.into(),
             lines: pending,
         });
     }
+
+    // The child is dead on a stop path, so the readers reach EOF promptly and the
+    // tasks can be joined rather than abandoned — which is what lets the tree
+    // kill be proven to have left nothing behind.
     let mut read_failed = false;
-    if !timed_out {
-        for task in [out, err] {
-            match task.await {
-                Ok(Ok(())) => {}
-                error => {
-                    read_failed = true;
-                    stderr.push_str(&format!("Stream error: {error:?}\n"));
-                }
+    for task in [out, err] {
+        match task.await {
+            Ok(Ok(())) => {}
+            error => {
+                read_failed = true;
+                stderr.push_str(&format!("Stream error: {error:?}\n"));
             }
         }
     }
@@ -247,33 +540,22 @@ pub async fn run<F: FnMut(OutputBatch)>(
             1
         }
     };
-    let exit_code = if timed_out {
-        124
+    let exit_code = if cancelled {
+        CANCELLED_EXIT_CODE
+    } else if timed_out {
+        TIMEOUT_EXIT_CODE
     } else if read_failed && exit_code == 0 {
         1
     } else {
         exit_code
     };
-    let duration_ms = started.elapsed().as_millis() as u64;
-    let state = if timed_out {
-        "TIMED OUT"
-    } else if exit_code == 0 {
-        "succeeded"
-    } else {
-        "FAILED"
-    };
-    ScriptResult {
-        run_id: run_id.into(),
-        verb: verb.verb.into(),
+    Outcome {
         exit_code,
-        duration_ms,
+        cancelled,
+        timed_out,
+        duration_ms: started.elapsed().as_millis() as u64,
         stdout,
         stderr,
-        summary: format!(
-            "{} {state} — exit {exit_code} in {:.2}s",
-            verb.label,
-            duration_ms as f64 / 1000.0
-        ),
     }
 }
 

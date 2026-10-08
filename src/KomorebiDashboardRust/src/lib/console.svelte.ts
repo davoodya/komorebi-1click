@@ -30,6 +30,9 @@ class ConsoleStore {
   /** Console share of the tab body, in percent; global to every tab. */
   percent = $state(DEFAULT_CONSOLE_PERCENT);
 
+  /** A cancel has been requested for the live run and is not yet confirmed. */
+  cancelRequested = $state(false);
+
   /** True while a verb is executing: rows disable, nothing else may start. */
   get busy(): boolean {
     return this.runId !== null;
@@ -49,6 +52,7 @@ class ConsoleStore {
     this.exitCode = null;
     this.durationMs = 0;
     this.summary = `Running ${verb}...`;
+    this.cancelRequested = false;
   }
 
   /**
@@ -82,16 +86,33 @@ class ConsoleStore {
   /** Record the verdict of a finished run. */
   finish(result: ScriptResult): void {
     if (this.runId !== null && result.runId !== this.runId) return;
-    // The backend treats the exit code as the last word on the state except for
-    // timeout (124) and the cancelled run, which keep their own identity.
+    // Both flags come from the backend as recorded facts. They are never derived
+    // from the exit code here: a cancellation and a timeout must stay distinct,
+    // and only the backend knows which one actually happened.
     this.state = describeRun({
       exitCode: result.exitCode,
-      timedOut: result.exitCode === 124
+      cancelled: result.cancelled,
+      timedOut: result.timedOut
     });
     this.exitCode = result.exitCode;
     this.durationMs = result.durationMs;
     this.summary = result.summary;
     this.runId = null;
+    this.cancelRequested = false;
+  }
+
+  /**
+   * Mark that a cancel has been asked for. The run is not over until the backend
+   * says so, so this only drives the button's own state; the verdict still comes
+   * from `finish`.
+   */
+  markCancelRequested(): void {
+    this.cancelRequested = true;
+  }
+
+  /** A cancel was asked for but no live run answered, so nothing was stopped. */
+  cancelMissed(): void {
+    this.cancelRequested = false;
   }
 
   /** Clear the transcript only. Never cancels the run (spec US 33). */
@@ -111,6 +132,8 @@ class ConsoleStore {
       runId: this.runId ?? 'local',
       verb: this.verb ?? 'unknown',
       exitCode: 1,
+      cancelled: false,
+      timedOut: false,
       durationMs: 0,
       stdout: '',
       stderr: message,

@@ -26,6 +26,19 @@ fn app_info(state: tauri::State<'_, AppState>) -> serde_json::Value {
     serde_json::json!({"product":"Komorebi Admin Dashboard", "version":env!("CARGO_PKG_VERSION"),
         "gitSha":option_env!("DASHBOARD_GIT_SHA").unwrap_or("development"), "scriptsPath":state.scripts})
 }
+/// Stop a live run.
+///
+/// Returns whether a run was actually stopped. `false` is a normal answer: the
+/// run may have finished between the user's click and this call arriving, and
+/// saying so is more honest than reporting a cancel that did nothing.
+///
+/// This deliberately does **not** consult the busy guard. Cancelling has to work
+/// while a verb is running — that is the whole point — and the guard exists to
+/// stop a second verb from starting, not to stop a cancel from landing.
+#[tauri::command]
+fn cancel_run(run_id: String) -> bool {
+    dashboard_core::request_cancel(&run_id)
+}
 /// Dispatch a verb and stream its output to the frontend.
 ///
 /// Returns `Result` because this is an **async** command that borrows the
@@ -33,8 +46,20 @@ fn app_info(state: tauri::State<'_, AppState>) -> serde_json::Value {
 /// (`State<'_, _>`) to return a `Result`, or the future cannot be driven to
 /// `'static`. The `Err` arm is reserved for a genuine boundary failure; every
 /// outcome the scripts can produce — unknown verb (2), missing script (127),
-/// non-zero exit, timeout — is a *structured* `Ok(ScriptResult)` value, because
-/// the spec's error contract says a failure never throws across the boundary.
+/// non-zero exit, timeout, cancellation — is a *structured* `Ok(ScriptResult)`
+/// value, because the spec's error contract says a failure never throws across
+/// the boundary.
+///
+/// Two rules, and they are deliberately different:
+///
+/// * The busy flag stops a second verb from starting while one is running, which
+///   is what keeps the shared console pane coherent. It is released on every
+///   return path — normal exit, non-zero exit, timeout and cancellation alike —
+///   because the guard is dropped when this command returns, and it always
+///   returns: a timed-out run is a structured result, never a hung future.
+/// * The flag is not what makes cancellation possible. `cancel_run` does not
+///   consult it, so a cancel lands while a run is live, which is the whole point
+///   of having a cancel.
 #[tauri::command]
 async fn run_verb(
     app: tauri::AppHandle,
@@ -43,20 +68,6 @@ async fn run_verb(
     arguments: Vec<String>,
     run_id: String,
 ) -> Result<ScriptResult, String> {
-    if state
-        .busy
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .is_err()
-    {
-        // A refused dispatch is a normal, reportable outcome: the console shows
-        // it as a failed run and the row re-enables when the live run finishes.
-        return Ok(ScriptResult::error(
-            &verb,
-            &run_id,
-            1,
-            "Another operation is already running.".into(),
-        ));
-    }
     let _guard = BusyGuard(&state.busy);
     Ok(run(&state.scripts, &verb, &arguments, &run_id, |batch| {
         let _ = app.emit("script-output", batch);
@@ -92,7 +103,9 @@ fn main() {
             scripts,
             busy: AtomicBool::new(false),
         })
-        .invoke_handler(tauri::generate_handler![list_verbs, app_info, run_verb])
+        .invoke_handler(tauri::generate_handler![
+            list_verbs, app_info, run_verb, cancel_run
+        ])
         .run(tauri::generate_context!())
         .expect("Dashboard runtime failed");
 }

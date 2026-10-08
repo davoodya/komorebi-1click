@@ -47,6 +47,10 @@ export interface ScriptResult {
   runId: string;
   verb: string;
   exitCode: number;
+  /** The user stopped this run. A recorded fact, never inferred from the code. */
+  cancelled: boolean;
+  /** The run overran its budget. Distinct from a failure, on purpose. */
+  timedOut: boolean;
   durationMs: number;
   stdout: string;
   stderr: string;
@@ -87,6 +91,17 @@ export function appInfo(): Promise<AppInfo> {
  */
 export function runVerb(verb: string, args: string[], runId: string): Promise<ScriptResult> {
   return invoke<ScriptResult>('run_verb', { verb, arguments: args, runId });
+}
+
+/**
+ * Ask the backend to stop a live run.
+ *
+ * Resolves to whether a run was actually stopped. `false` is normal and not an
+ * error: the run may have finished in the moment between the click and this
+ * call. The caller must say so rather than claim a cancel that did nothing.
+ */
+export function cancelRun(runId: string): Promise<boolean> {
+  return invoke<boolean>('cancel_run', { runId });
 }
 
 export function onOutput(handler: (batch: OutputBatch) => void): Promise<UnlistenFn> {

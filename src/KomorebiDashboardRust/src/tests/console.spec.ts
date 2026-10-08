@@ -6,11 +6,18 @@ function batch(runId: string, count: number, text = 'x'.repeat(10)): OutputBatch
   return { runId, lines: Array.from({ length: count }, () => ({ stream: 'stdout', text })) };
 }
 
-function result(runId: string, exitCode: number, durationMs = 10): ScriptResult {
+function result(
+  runId: string,
+  exitCode: number,
+  durationMs = 10,
+  flags: { cancelled?: boolean; timedOut?: boolean } = {}
+): ScriptResult {
   return {
     runId,
     verb: 'demo-stream',
     exitCode,
+    cancelled: flags.cancelled ?? false,
+    timedOut: flags.timedOut ?? false,
     durationMs,
     stdout: '',
     stderr: '',
@@ -92,9 +99,17 @@ describe('console store', () => {
   });
 
   it('records timeout as its own fact, not a failure', () => {
+    // The timeout is read from the backend's flag, not inferred from 124 alone:
+    // only the backend knows whether the run overran or the script chose 124.
     console_.begin('demo-stream', 'run-1');
-    console_.finish(result('run-1', 124, 300_000));
+    console_.finish(result('run-1', 124, 300_000, { timedOut: true }));
     expect(console_.state).toBe('timed-out');
+  });
+
+  it('records cancellation as its own fact, not a failure', () => {
+    console_.begin('demo-stream', 'run-1');
+    console_.finish(result('run-1', 130, 900, { cancelled: true }));
+    expect(console_.state).toBe('cancelled');
   });
 
   it('clamps the console share into the supported range', () => {

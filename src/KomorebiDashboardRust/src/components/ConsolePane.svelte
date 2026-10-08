@@ -1,5 +1,6 @@
 <script lang="ts">
   import { console_ } from '../lib/console.svelte.ts';
+  import { cancelLiveRun } from '../lib/dispatch';
   import { formatDuration, formatLineCount, runStateLabel } from '../lib/format';
 
   let body = $state<HTMLDivElement | null>(null);
@@ -43,6 +44,23 @@
       <span class="mono">{console_.verb}</span>
     {/if}
     <span class="row-actions">
+      <!--
+        Cancel is offered only while a run is live, because that is the only time
+        it can do anything. It stays visible but disabled once a cancel is on its
+        way, so the user can see the request was taken while the verdict is still
+        coming from the backend.
+      -->
+      {#if console_.busy}
+        <button
+          class="btn btn-quiet"
+          type="button"
+          data-testid="cancel-run"
+          disabled={console_.cancelRequested}
+          onclick={() => void cancelLiveRun()}
+        >
+          {console_.cancelRequested ? 'Cancelling...' : 'Cancel'}
+        </button>
+      {/if}
       <!-- Clear works during a run and does not cancel it (spec US 33). -->
       <button class="btn btn-quiet" type="button" onclick={() => console_.clear()}>Clear</button>
     </span>

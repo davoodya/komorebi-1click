@@ -1,5 +1,115 @@
 # Rust translation implementation handoff
 
+## 2026-10-08 (session 2b) — Ticket 02 complete and verified
+
+Ticket `02-execution-contract` is **done and verified against the published
+artefact**, and both ticket-01 commits are **pushed to `origin/main`**. The next
+ticket is `03-registry-cli-twin`.
+
+Artefact: `releases/rust/KomorebiDashboard.exe` — **6,420,992 bytes**, still the
+only file in that directory. The WPF `releases/KomorebiDashboard.exe`
+(170,176,020 bytes) remains untouched.
+
+### What was built
+
+The execution contract turned two *inferred* facts into *recorded* ones. Previously
+a timeout was guessed from exit code 124 and a cancellation from 130; now the
+backend that observed the stop sets `cancelled` / `timedOut` on `ScriptResult`
+(and on the internal `Outcome`), and the frontend reads those flags instead of
+deriving a verdict from a number. That is what keeps "cancelled" and "timed out"
+from collapsing into "failed".
+
+* `src-tauri/src/lib.rs` — a per-run-id registry (`HashMap<String, mpsc::Sender>`
+  behind a `LazyLock`) so `request_cancel(run_id)` reaches a live run; `TreeGuard`,
+  whose `Drop` kills the whole tree as a safety net while the main path kills and
+  awaits first; `timeout_for(arguments)` reading `-TimeoutSeconds` with a 300 s
+  default; `process_exists` / `kill_process_tree` for the orphan checks.
+* `src-tauri/src/main.rs` — the new `cancel_run` command. It deliberately does
+  **not** consult the busy flag: cancelling has to land while a run is live, which
+  is the entire point. The busy flag keeps its original job of stopping a *second*
+  verb from starting.
+* `src/lib/{ipc,dispatch,console.svelte,format}.ts` — `cancelRun`, the
+  `cancelled` / `timedOut` fields, a Cancel action rendered only while a run is in
+  flight, and verdicts derived from the flags.
+
+### Evidence (measured, against the published artefact)
+
+```text
+cargo test --locked                    exit 0    13 passed / 0 failed
+cargo fmt --check                      exit 0
+cargo clippy --locked -D warnings      exit 0    no warnings
+npm run check                          exit 0    0 errors, 0 warnings
+npm test                               exit 0    44 passed / 0 failed
+tests/rust-ticket02-probe.ps1          exit 0    26/26 probes
+tests/rust-ticket02-ui.ps1             exit 0    11/11 checks
+tests/rust-ticket01-cli.mjs            exit 0    6/6   (regression)
+tests/rust-ticket01-ui.ps1             exit 0    23/23 (regression)
+```
+
+The numbers that matter, and where they came from:
+
+| Fact | Measured |
+| --- | --- |
+| Cancel stops a 30 s run | after **976 ms** (library), verdict on screen **1285 ms** after the real button click |
+| Cancel is recorded as | `cancelled=true`, `timed_out=false`, exit **130**, work incomplete |
+| Hung run with a 3 s budget | **3382 ms**, exit **124**, `TIMED OUT`, never `FAILED` (shipped binary: 3868 ms) |
+| Tree kill | 4 fixture pids alive before, **0** after, grandchild included |
+| Missing script | exit **127**, path named, **0** batches, no PowerShell created |
+| 1000-line run | **9** batches, worst gap **65 ms**, all 1000 lines present |
+
+`tests/rust-ticket02-probe.ps1` writes `test-results/rust-ticket02/probe-results.json`.
+It is assembled from two independent sources — `[probe] key=value` lines emitted by
+the Rust tests that took each measurement, and runs of the shipped binary — so
+nothing in it is hand-typed (a hand-written summary drifts; a parsed measurement
+cannot).
+
+### Three pitfalls, all encoded in the tests now
+
+1. **A windows-subsystem EXE has no readable stdio from PowerShell.** `& $exe
+   demo-stream` returned exit 0 with **zero bytes**, which first looked like a
+   broken binary and was not. Node's `child_process.spawn` gives the child real
+   pipes, so `tests/rust-ticket02-exe-driver.mjs` drives it. Ticket 01's
+   `rust-ticket01-cli.mjs` already relied on this.
+2. **Cancel must be keyed by run id, not by a global busy flag.** A global flag
+   cannot express it — it would refuse the cancel it exists to allow.
+3. **Killing the direct child is not enough.** The grandchild holds the pipe
+   handles, so only `taskkill /T` on the tree releases them. This is the hang the
+   WPF build documented.
+
+### Independent findings carried forward
+
+* **Ticket 03 (CLI surface): US 55, Ctrl+C cancels the child rather than orphaning
+  it.** Not implemented here, deliberately — it cannot be verified from the library
+  and was not provable in a non-interactive session. Recorded on the ticket with the
+  two Windows facts that make it non-trivial: the binary has no console, so it must
+  call `AttachConsole(ATTACH_PARENT_PROCESS)` first; and
+  `GenerateConsoleCtrlEvent` can deliver Ctrl-Break to a chosen process group but not
+  a targeted Ctrl-C, so the harness must use `CREATE_NEW_PROCESS_GROUP` +
+  `CTRL_BREAK_EVENT`. The child is already registered as run id `"cli"`, so the
+  handler only has to call the existing `request_cancel("cli")`.
+* **Ticket 09 (console pane)** owns the console-visual work; the `ScriptResult`
+  payload now carries the stop flags it needs.
+
+### Honest limitations
+
+* `npm audit` was not run (per instruction: skip unless it blocks). The dependency
+  set is exact-pinned with a committed lockfile, but it is not audited.
+* Concurrency is bounded per run id by the registry, and the busy flag still stops a
+  second *verb* from starting. The window therefore still runs one verb at a time;
+  the registry's independence is proven by the Rust suite, not by the UI.
+* No clean-checkout worktree proof was run for this round. The build contract
+  (`build.ps1` phases, including the companion-file guard) passed in-tree.
+
+### Commits
+
+* `b6b0a2f` — ticket 01, frontend + first verb (64 files).
+* `d8d9906` — ticket 01, review findings fixed.
+* `c23ea8c` — ticket 01, handoff documentation.
+* Pushed to `origin/main` in this session (`de45b7a..c23ea8c`).
+* Ticket 02 work is staged for the next commit, scoped to this module's own paths.
+
+---
+
 ## 2026-10-08 (session 2) — Ticket 01 complete and verified
 
 Ticket `01-scaffold-first-verb` is **done and verified against the published
