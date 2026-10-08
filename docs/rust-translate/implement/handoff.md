@@ -22,8 +22,9 @@ never true on disk. Treat similar claims in older handoffs as unverified.
 
 ### Built in this session
 
-Frontend scaffold, Svelte 5 + Vite 7 + TypeScript 5 + Tailwind 4, versions pinned
-exactly with a committed `package-lock.json`.
+Frontend scaffold, Svelte 5 + Vite 8 + TypeScript 5 + Tailwind 4, versions pinned
+exactly with a committed `package-lock.json` (vite 8.3.4 / svelte 5.57.2 / typescript
+5.9.3 / tailwindcss 4.3.3 — read from the lockfile, not from memory).
 
 * `src/app.css` — three-layer design system: raw scales, semantic tokens, and an
   `@theme` bridge so utilities such as `bg-surface` resolve from tokens. Dark is

@@ -40,8 +40,9 @@ frontend at all** (no `package.json`, no `vite.config.ts`, no `index.html`) and
 
 ### Built
 
-* Frontend scaffold: Svelte 5 + Vite 7 + TypeScript 5 + Tailwind 4, exact-pinned
-  versions, committed `package-lock.json`.
+* Frontend scaffold: Svelte 5 + Vite 8 + TypeScript 5 + Tailwind 4, exact-pinned
+  versions (vite 8.3.4 / svelte 5.57.2 / typescript 5.9.3 / tailwindcss 4.3.3, read
+  from the lockfile), committed `package-lock.json`.
 * Design system (`src/app.css`) in three layers: raw scales, semantic tokens,
   `@theme` bridge so utilities such as `bg-surface` resolve from tokens. The dark
   theme is the default and the light override sits behind an explicit

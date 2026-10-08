@@ -28,6 +28,16 @@ try {
     New-Item -ItemType Directory -Force $destination | Out-Null
     $source = Join-Path $PSScriptRoot 'src-tauri/target/release/KomorebiDashboard.exe'
     Copy-Item -LiteralPath $source -Destination (Join-Path $destination 'KomorebiDashboard.exe')
+    # Ticket 01 requires exactly one executable here with no companion files, so
+    # assert it rather than trust directory hygiene: a stray file left by an
+    # earlier build, an editor or a hand copy must fail the build, not ship.
+    $expected = 'KomorebiDashboard.exe', '.gitkeep'
+    $stray = @(Get-ChildItem -LiteralPath $destination -Force |
+        Where-Object { $expected -notcontains $_.Name })
+    if ($stray.Count -gt 0) {
+        throw ("releases/rust must hold only KomorebiDashboard.exe; found: " +
+            (($stray | ForEach-Object Name) -join ', '))
+    }
     Get-Item (Join-Path $destination 'KomorebiDashboard.exe') | Select-Object FullName, Length
     Get-FileHash (Join-Path $destination 'KomorebiDashboard.exe') -Algorithm SHA256
 } finally { Pop-Location }
