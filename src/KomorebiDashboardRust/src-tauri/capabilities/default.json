@@ -1,0 +1,11 @@
+{
+  "identifier": "main-capability",
+  "description": "Local dashboard event listener access only.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
+  ]
+}

@@ -1,0 +1,231 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   Design tokens — THE ONLY PLACE A COLOUR LITERAL MAY APPEAR (ADR-0017).
+   Components consume var(--token); a component with a literal colour is a
+   defect, because it cannot follow the theme or the accent.
+   ========================================================================== */
+@layer base {
+  /* Dark is the default theme, so it is declared on :root as well as under its
+     own selector: the explicit selector is what a component or a test can rely
+     on, and a selector list keeps the values in exactly one place. */
+  :root,
+  [data-theme="dark"] {
+    color-scheme: dark;
+    --bg:            oklch(18.5% 0.012 258);
+    --surface:       oklch(22.5% 0.014 258);
+    --surface-2:     oklch(27% 0.016 258);
+    --surface-3:     oklch(31% 0.016 258);
+    --border:        oklch(34% 0.016 258);
+    --text:          oklch(95% 0.005 250);
+    --muted:         oklch(72% 0.012 255);
+    --shadow:        0 1px 2px oklch(0% 0 0 / 0.35), 0 8px 24px oklch(0% 0 0 / 0.22);
+
+    /* accent is data-driven: [data-accent] below rewrites it */
+    --accent:          oklch(62% 0.19 255);
+    --accent-contrast: oklch(99% 0 0);
+    --accent-soft:     color-mix(in oklab, var(--accent) 18%, transparent);
+    --accent-faint:    color-mix(in oklab, var(--accent) 10%, transparent);
+    --accent-border:   color-mix(in oklab, var(--accent) 65%, transparent);
+
+    /* semantic states */
+    --ok:      oklch(72% 0.16 150);
+    --warning: oklch(80% 0.15 80);
+    --danger:  oklch(65% 0.20 25);
+
+    /* geometry and type */
+    --radius-lg: 14px;
+    --radius-md: 10px;
+    --radius-sm: 7px;
+    --row-gap: 6px;
+    --ui-font: "Segoe UI", "Segoe UI Variable", system-ui, sans-serif;
+    --ui-font-size: 14px;
+    --console-font: "Cascadia Mono", Consolas, "Courier New", monospace;
+    --console-font-size: 12px;
+    --ui-scale: 1;
+  }
+
+  [data-theme="light"] {
+    color-scheme: light;
+    --bg:        oklch(97% 0.004 250);
+    --surface:   oklch(99.4% 0.002 250);
+    --surface-2: oklch(95% 0.006 250);
+    --surface-3: oklch(92% 0.008 250);
+    --border:    oklch(88% 0.008 250);
+    --text:      oklch(25% 0.02 255);
+    --muted:     oklch(48% 0.015 255);
+    --shadow:    0 1px 2px oklch(0% 0 0 / 0.08), 0 8px 24px oklch(0% 0 0 / 0.06);
+    --ok:        oklch(55% 0.15 150);
+    --warning:   oklch(62% 0.14 70);
+    --danger:    oklch(52% 0.20 25);
+  }
+
+  /* ---- accent palette: the eight shipped swatches (ADR-0015 parity) ---- */
+  [data-accent="Blue"]    { --accent: oklch(62% 0.19 255); }
+  [data-accent="Indigo"]  { --accent: oklch(61% 0.20 275); }
+  [data-accent="Violet"]  { --accent: oklch(64% 0.22 300); }
+  [data-accent="Rose"]    { --accent: oklch(66% 0.20 12);  }
+  [data-accent="Amber"]   { --accent: oklch(79% 0.16 75); --accent-contrast: oklch(24% 0.03 75); }
+  [data-accent="Emerald"] { --accent: oklch(71% 0.16 155); --accent-contrast: oklch(22% 0.03 155); }
+  [data-accent="Teal"]    { --accent: oklch(72% 0.12 190); --accent-contrast: oklch(22% 0.03 190); }
+  [data-accent="Slate"]   { --accent: oklch(64% 0.03 255); }
+
+  /* light theme needs darker accents to stay legible on a bright surface */
+  [data-theme="light"][data-accent="Blue"]    { --accent: oklch(50% 0.19 255); }
+  [data-theme="light"][data-accent="Indigo"]  { --accent: oklch(49% 0.20 275); }
+  [data-theme="light"][data-accent="Violet"]  { --accent: oklch(52% 0.22 300); }
+  [data-theme="light"][data-accent="Rose"]    { --accent: oklch(53% 0.20 12);  }
+  [data-theme="light"][data-accent="Amber"]   { --accent: oklch(70% 0.16 75); --accent-contrast: oklch(24% 0.03 75); }
+  [data-theme="light"][data-accent="Emerald"] { --accent: oklch(58% 0.15 155); --accent-contrast: oklch(99% 0 0); }
+  [data-theme="light"][data-accent="Teal"]    { --accent: oklch(58% 0.11 190); --accent-contrast: oklch(99% 0 0); }
+  [data-theme="light"][data-accent="Slate"]   { --accent: oklch(52% 0.03 255); }
+
+  /* ---- UI scale: a CSS root scale, verified at 125 % (spec US 64) ---- */
+  [data-scale="100"] { --ui-scale: 1; }
+  [data-scale="125"] { --ui-scale: 1.25; }
+  [data-scale="150"] { --ui-scale: 1.5; }
+
+  html, body { height: 100%; }
+
+  body {
+    /* No unconditional compositing effect is requested anywhere: D21 proved it
+       can launch to a blank window on this hardware (bugs-fixing.md 2.1). */
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--ui-font);
+    font-size: calc(var(--ui-font-size) * var(--ui-scale));
+    line-height: 1.45;
+    margin: 0;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* The app never scrolls as a whole; the row area scrolls. */
+  #app { height: 100%; }
+}
+
+@layer components {
+  /* ---------- shell ---------- */
+  .app-shell { display: flex; flex-direction: column; height: 100%; }
+
+  .header-band {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background-image: linear-gradient(90deg, var(--accent-soft), transparent 70%);
+    flex: 0 0 auto;
+  }
+  .header-logo { width: 32px; height: 32px; image-rendering: auto; }
+  .header-title { font-size: 1.15em; font-weight: 600; letter-spacing: 0.2px; }
+  .header-meta  { color: var(--muted); font-size: 0.82em; }
+
+  .tab-strip {
+    display: flex; gap: 2px; padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex: 0 0 auto; overflow-x: auto;
+  }
+  .tab-button {
+    position: relative;
+    padding: 9px 14px; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    color: var(--muted); font-size: 0.9em; white-space: nowrap;
+    background: transparent; border: 0; cursor: pointer;
+    transition: color 120ms ease, background-color 120ms ease;
+  }
+  .tab-button:hover { color: var(--text); background: var(--accent-faint); }
+  .tab-button[aria-selected="true"] { color: var(--text); background: var(--accent-soft); }
+  .tab-button[aria-selected="true"]::after {
+    content: ""; position: absolute; inset-inline: 8px; bottom: -1px; height: 2px;
+    background: var(--accent); border-radius: 2px;
+  }
+
+  .tab-panel { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+  .tab-heading { padding: 14px 20px 4px; font-weight: 600; }
+  .tab-description { padding: 0 20px 8px; color: var(--muted); font-size: 0.85em; }
+
+  /* ---------- rows ---------- */
+  .row-list { padding: 6px 20px 16px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+
+  .row-card {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    margin-bottom: var(--row-gap);
+  }
+  .row-card[data-running="true"] { border-color: var(--accent-border); }
+  .row-grid { display: flex; align-items: flex-start; gap: 10px; }
+  .row-label { font-weight: 600; font-size: 0.95em; }
+  .row-help { color: var(--muted); font-size: 0.82em; margin-top: 2px; }
+  .row-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+  .badge-readonly {
+    font-size: 0.68em; font-weight: 700; letter-spacing: 0.08em;
+    padding: 2px 7px; border-radius: 999px;
+    color: var(--accent-contrast); background: var(--accent);
+    text-transform: uppercase; white-space: nowrap;
+  }
+
+  .value-box {
+    font-family: var(--console-font);
+    font-size: 0.85em;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 5px 8px; min-width: 7ch; text-align: right;
+    color: var(--text);
+  }
+  .value-box::placeholder { color: var(--muted); }
+  .value-box:focus { outline: 2px solid var(--accent-border); outline-offset: 1px; }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    border-radius: var(--radius-sm);
+    padding: 6px 12px; font-size: 0.85em; font-weight: 600;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+    cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent-border); background: var(--accent-faint); }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: var(--accent-contrast); border-color: transparent; }
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.06); background: var(--accent); }
+  .btn-quiet { background: transparent; color: var(--muted); border-color: transparent; }
+  .btn-quiet:hover:not(:disabled) { color: var(--text); background: var(--accent-faint); }
+  .btn-icon { padding: 6px 8px; }
+
+  /* ---------- console ---------- */
+  .console-pane {
+    flex: 0 0 auto;
+    display: flex; flex-direction: column;
+    border-top: 1px solid var(--accent-border);
+    background: var(--surface-2);
+    min-height: 0;
+  }
+  .console-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 14px; font-size: 0.8em; color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .console-body {
+    flex: 1 1 auto; overflow-y: auto; margin: 0; padding: 8px 14px;
+    font-family: var(--console-font);
+    font-size: calc(var(--console-font-size) * var(--ui-scale));
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .console-line-stderr { color: var(--warning); }
+  .console-empty { color: var(--muted); }
+  .status-bar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 5px 14px; font-size: 0.78em; color: var(--muted);
+    border-top: 1px solid var(--border);
+  }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: 0 0 auto; }
+  .status-dot[data-state="running"]   { background: var(--accent); }
+  .status-dot[data-state="succeeded"] { background: var(--ok); }
+  .status-dot[data-state="failed"]    { background: var(--danger); }
+  .status-dot[data-state="timed-out"] { background: var(--warning); }
+  .status-dot[data-state="cancelled"] { background: var(--muted); }
+
+  .mono { font-family: var(--console-font); }
+}

@@ -4,6 +4,13 @@ releases/*.exe
 releases/*.msi
 releases/*.zip
 
+# The Rust dashboard build publishes here too (ADR-0017 Q4: it ships alongside
+# the WPF EXE during the transition). Same rule applies — the binary is built by
+# src/KomorebiDashboardRust/build.ps1 and is never committed; the build VERIFIES
+# its presence, so ignoring it does not hide a failed build.
+releases/rust/*
+!releases/rust/.gitkeep
+
 # The installer wrapper EXE is likewise a build artifact: scripts/build-exe.ps1
 # rebuilds it from scripts/komorebi-install.cs with csc.exe on any dev machine
 # (ADR-0004). The SOURCE is tracked; the binary is not.
