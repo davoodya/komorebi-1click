@@ -58,7 +58,18 @@ changes; the shell does.
    the whole process tree.
 6. **Settings semantics:** defaults on the type, normalization on load and save, atomic write,
    corrupt-file quarantine instead of overwrite.
-7. **English-only shipped text.**
+7. **English-only shipped text.** Every shipped string, comment and document is written in
+   English — which is a statement about *language*, not about *character encoding*. Ordinary
+   English typography is therefore permitted: em dashes, en dashes, curly quotes, ellipses
+   and similar punctuation are English. What the rule forbids is text in another language —
+   the one real violation in this project's history was a Chinese help string (defect D25).
+   The strongest machine-checkable form of the rule is "no CJK, Hangul, Cyrillic, Arabic,
+   Hebrew, Thai or Devanagari codepoints in shipped text (binary assets excluded)", because
+   that catches a foreign-language string while leaving honest English punctuation alone.
+   The original WPF dashboard that this work translates uses em dashes in its shipped UI and
+   XAML as well, so ASCII-only text would be a parity regression, not an improvement.
+   A check that flags every non-ASCII codepoint is a false positive: it fails on prose
+   written by the very reviewers applying it.
 8. **CLI-only build and publish** — no GUI IDE anywhere in the pipeline.
 
 ### What is replaced

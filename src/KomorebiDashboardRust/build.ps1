@@ -13,6 +13,10 @@ try {
     # Phase 2: static checks.
     npm.cmd run check
     if ($LASTEXITCODE -ne 0) { throw 'Frontend checks failed.' }
+    # ADR-0017 rule 7 at the repo root: shipped text must not contain foreign-script
+    # characters. Deliberately not a "no non-ASCII" check — see the script's header.
+    node (Join-Path $repo 'tests/check-shipped-text.mjs') --repo $repo
+    if ($LASTEXITCODE -ne 0) { throw 'Shipped-text language check failed (ADR-0017 rule 7).' }
     cargo fmt --manifest-path src-tauri/Cargo.toml --check
     if ($LASTEXITCODE -ne 0) { throw 'Rust formatting check failed.' }
     # Phase 3: safe behavior tests. No state-changing management verb is run.
