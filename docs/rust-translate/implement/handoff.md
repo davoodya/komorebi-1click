@@ -74,6 +74,44 @@ none), console empty-state then Clear, one real click dispatched through the row
 action that streamed output and reported exit 0, exactly one real window, and no
 process left behind.
 
+### Independent review, and what it changed
+
+Two independent reviews (standards conformance; ticket faithfulness) ran against
+`b6b0a2f`. Both cleared the binding rules — English-only text, no literal colours in
+components, no unconditional vibrancy, exact version pins, no `.ps1` touched, and
+comments that explain why. Both judged the single-tab reading defensible, because
+acceptance item 2 asks literally for "one tab".
+
+Three findings were real and are fixed in `d8d9906`:
+
+* `build.ps1` phase 4 now throws if `releases/rust/` holds anything but
+  `KomorebiDashboard.exe`. "No companion files" had been true only through
+  directory hygiene, so a stray file could have shipped.
+* `src/assets/logo.ico` was a byte-identical 353 KB copy of the WPF
+  `Resources/logo.ico`, referenced by nothing; deleted. `tauri.conf.json` already
+  points at the original for the window/taskbar icon and `App.svelte` imports the
+  png, so this was pure repository weight.
+* The recorded versions were wrong: vite is **8.3.4**, not 7. The handoff and the
+  ticket both said "Vite 7"; both are corrected, and the numbers are now stated as
+  read from `package-lock.json`.
+
+Two findings are recorded as deferred shape, not defects: `ScriptResult` has no
+explicit `cancelled`/`timedOut` field (a timeout is inferred from exit 124, and the
+richer payload belongs with ticket 09's console work), and `--help` prints the
+registry rows but hard-codes the `demo-stream` argument list, because per-verb
+argument metadata arrives with ticket 03's registry.
+
+### Clean-checkout proof
+
+`git worktree add --detach` on `b6b0a2f` produced a checkout with 36 module files
+and **zero** dirty files. The full four phases ran there, exited 0, and produced
+`releases/rust/KomorebiDashboard.exe` at 6,386,176 bytes — the same size as the
+in-tree artefact. The worktree was then removed and `git worktree list` shows only
+the main tree. So the commit is self-sufficient — no file needed for the build was
+left uncommitted — and the "clean checkout" acceptance is demonstrated rather than
+merely caveated. All 36 project `.ps1` files also parse with zero errors, confirming
+nothing in the module reaches into the script layer.
+
 ### Facts worth carrying into later tickets
 
 * **Footprint**, idle 45 s after launch, whole process tree: Rust parent 28.5 MB
