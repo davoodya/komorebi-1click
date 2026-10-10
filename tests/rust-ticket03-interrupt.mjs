@@ -15,8 +15,8 @@
 //
 // Usage:
 //   node tests/rust-ticket03-interrupt.mjs [--exe <path>] [--evidence <dir>]
-import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -71,83 +71,182 @@ async function countFixtureProcesses() {
   return (await fixtureProcessIds()).length;
 }
 
+// The delivery helper: CreateProcess(..., CREATE_NEW_PROCESS_GROUP) +
+// GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid). Node cannot express this on
+// Windows (see the case-1 header), so case 1 drives this script.
+const signalHelper = path.join(repo, 'tests', 'rust-ticket03-signal.ps1');
+
+function runPs(script, args) {
+  const proc = spawnSync('pwsh', ['-NoProfile', '-File', script, ...args], {
+    encoding: 'utf8',
+    windowsHide: true
+  });
+  return { status: proc.status, stdout: proc.stdout ?? '', stderr: proc.stderr ?? '' };
+}
+
 const results = [];
 
 // ---------------------------------------------------------------------------
 // Case 1: the interrupt is delivered as a real console control event.
 //
-// The harness must create a NEW PROCESS GROUP to be able to address the child,
-// then send CTRL_BREAK_EVENT to that pid — a plain Ctrl+C cannot be aimed at a
-// chosen group. Node can do both: `detached: true` makes the child a process
-// group leader, and `process.kill(-pid, 'SIGBREAK')` addresses the group.
+// The first two attempts at this failed on what Windows actually allows, and
+// both failures are why the delivery now lives in PowerShell:
+//   * `detached: true` maps to DETACHED_PROCESS — the child gets NO console,
+//     so there is nothing to deliver a console event into;
+//   * `process.kill(-pid, 'SIGBREAK')` throws ESRCH — node has no negative-pid
+//     process-group semantics on Windows (measured);
+//   * even a direct GenerateConsoleCtrlEvent on a pseudo-console is accepted
+//     and lands nowhere (measured: win32 ok, child survives).
+//
+// The real topology is CreateProcess(..., CREATE_NEW_PROCESS_GROUP) + a console
+// the child genuinely shares + GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid).
+// tests/rust-ticket03-signal.ps1 does all of that; node drives it here.
+//
+// A pseudo-console cannot even receive console events (measured: AllocConsole
+// fails ERROR_ACCESS_DENIED), so the case measures the host first and SKIPs
+// with the measured reason instead of pretending. From a real console this
+// delivers and the case must PASS or FAIL — the procedure is recorded in the
+// US 55 entry of docs/rust-translate/bugs-fixing.md and the drift ledger.
 // ---------------------------------------------------------------------------
 async function delivered() {
   const name = 'delivered-interrupt';
-  const child = spawn(exe, ['demo-stream', '-Lines', '4000', '-DelayMs', '25'], {
-    windowsHide: true,
-    detached: true, // become a process-group leader so the event can be addressed
-    stdio: ['ignore', 'pipe', 'pipe']
-  });
+  const dir = path.join(evidence, name);
+  mkdirSync(dir, { recursive: true });
 
-  let stdout = '';
-  let stderr = '';
-  child.stdout.on('data', (d) => (stdout += d));
-  child.stderr.on('data', (d) => (stderr += d));
-
-  // Let the child actually start and begin streaming before interrupting it.
-  await new Promise((r) => setTimeout(r, 2500));
-  const aliveBefore = !child.killed && child.exitCode === null;
-
-  // SIGBREAK is CTRL_BREAK_EVENT; the negative pid addresses the whole group.
-  let signalError = '';
+  // Host gate: GetConsoleWindow() is 0 exactly when the caller has no real
+  // console — a pseudo-console, a redirected host, or a scheduled task.
+  // Skipping here is a measured capability statement (the send could never
+  // land), not a lenient test.
+  const gate = runPs(signalHelper, ['-Gate']);
+  let consoleWindow;
   try {
-    process.kill(-child.pid, 'SIGBREAK');
-  } catch (error) {
-    signalError = `${error.code || ''} ${error.message}`.trim();
+    consoleWindow = JSON.parse(gate.stdout.trim().split('\n').pop()).consoleWindow;
+  } catch {
+    consoleWindow = undefined;
+  }
+  if (typeof consoleWindow !== 'number') {
+    results.push({
+      case: name,
+      verdict: 'FAIL',
+      detail: `the host gate itself failed (exit ${gate.status}): ${gate.stderr.trim() || gate.stdout.trim()}`
+    });
+    return;
+  }
+  if (consoleWindow === 0) {
+    writeFileSync(
+      path.join(dir, `${name}.txt`),
+      `--- host gate (GetConsoleWindow) ---\n${gate.stdout.trim()}\n` +
+        `A pseudo-console reports 0: there is no console to receive a console control\n` +
+        `event, so delivery is skipped here instead of being attempted and failing.\n`
+    );
+    results.push({
+      case: name,
+      verdict: 'SKIP',
+      detail:
+        'no real console (GetConsoleWindow=0): a pseudo-console cannot receive console ' +
+        'control events. Re-run from a real console and this case delivers — the run is ' +
+        'wired to the same cancel path the window uses; the procedure is in ' +
+        'docs/rust-translate/bugs-fixing.md (US 55).'
+    });
+    return;
   }
 
-  const exit = await new Promise((resolve) => {
-    const timer = setTimeout(() => resolve({ timedOut: true }), 20000);
-    child.on('close', (code, signal) => {
-      clearTimeout(timer);
-      resolve({ code, signal });
-    });
-  });
+  // The child's argv travels as JSON: node cannot pass an array through a
+  // PowerShell -File command line (the first attempt arrived as one mangled
+  // string). See -ArgumentsFile in the helper.
+  const demoArgs = ['demo-stream', '-Lines', '4000', '-DelayMs', '25'];
+  const argsFile = path.join(dir, 'args.json');
+  writeFileSync(argsFile, JSON.stringify(demoArgs));
+
+  // Let the child actually start and begin streaming before interrupting it —
+  // the helper waits SignalAfterMs before generating the event.
+  const stdoutPath = path.join(dir, 'child-stdout.txt');
+  const stderrPath = path.join(dir, 'child-stderr.txt');
+  const resultPath = path.join(dir, 'child-signal.json');
+  const signal = runPs(signalHelper, [
+    '-ExePath', exe,
+    '-ArgumentsFile', argsFile,
+    '-SignalAfterMs', '2500',
+    '-ExitTimeoutMs', '20000',
+    '-StdoutPath', stdoutPath,
+    '-StderrPath', stderrPath,
+    '-ResultJsonPath', resultPath
+  ]);
+
+  let result = {};
+  try {
+    result = JSON.parse(readFileSync(resultPath, 'utf8'));
+  } catch {
+    result = {
+      ok: false,
+      createError: `the helper returned no result (exit ${signal.status}): ${signal.stderr.trim()}`
+    };
+  }
+  const stderrText = existsSync(stderrPath) ? readFileSync(stderrPath, 'utf8') : '';
+  const stdoutText = existsSync(stdoutPath) ? readFileSync(stdoutPath, 'utf8') : '';
+  const cancelled = /CANCELLED|cancelled/i.test(stderrText);
+  const terminationGraceful = /graceful/i.test(stderrText);
 
   await new Promise((r) => setTimeout(r, 1200));
   const stragglers = await countFixtureProcesses();
 
   writeFileSync(
-    path.join(evidence, `${name}.txt`),
-    `--- stdout (${stdout.split('\n').length} lines) ---\n${stdout}\n` +
-      `--- stderr ---\n${stderr}\n` +
-      `--- exit ---\n${JSON.stringify(exit)}\n` +
-      `--- signalError ---\n${signalError}\n` +
-      `--- stragglers ---\n${stragglers}\n`
+    path.join(dir, `${name}.txt`),
+    `--- helper result (waitStatus 0 = WAIT_OBJECT_0, 258 = WAIT_TIMEOUT) ---\n` +
+      `${JSON.stringify(result, null, 2)}\n` +
+      `--- stdout (${stdoutText.split('\n').length} lines) ---\n${stdoutText}\n` +
+      `--- stderr ---\n${stderrText}\n` +
+      `--- verdict inputs ---\ncancelled=${cancelled} graceful=${terminationGraceful} stragglers=${stragglers}\n`
   );
 
-  if (!aliveBefore) {
-    results.push({ case: name, verdict: 'FAIL', detail: 'the child exited before the interrupt was sent' });
-    return;
-  }
-  if (!signalError && /CANCELLED|cancelled/i.test(stderr) && stragglers === 0) {
-    results.push({ case: name, verdict: 'PASS', detail: `reported cancelled, exit ${exit.code}, 0 stragglers` });
-    return;
-  }
-  if (signalError) {
-    // The event could not be delivered by this host. Report the measured error.
+  if (result.createError) {
     results.push({
       case: name,
       verdict: 'SKIP',
-      detail: `console control event could not be delivered (${signalError}); ` +
-        `exit ${exit.code}, ${stragglers} straggler(s), stderr: ${stderr.trim().split('\n').slice(-2).join(' | ')}`
+      detail: `console control event could not be delivered (${result.createError}); ` +
+        `exit ${result.exitCode ?? 'none'}, ${stragglers} straggler(s), stderr: ${stderrText
+          .trim()
+          .split('\n')
+          .slice(-2)
+          .join(' | ')}`
     });
+    return;
+  }
+  if (result.aliveBefore === false) {
+    results.push({ case: name, verdict: 'FAIL', detail: 'the child exited before the interrupt was sent' });
+    return;
+  }
+  if (!result.generateOk) {
+    // The OS refused the send itself (measured win32 error), not a product bug.
+    results.push({
+      case: name,
+      verdict: 'SKIP',
+      detail: `console control event could not be delivered (GenerateConsoleCtrlEvent failed ` +
+        `with win32 ${result.generateLastError ?? 'unknown'}); exit ${result.exitCode ?? 'none'}, ` +
+        `${stragglers} straggler(s), stderr: ${stderrText.trim().split('\n').slice(-2).join(' | ')}`
+    });
+    return;
+  }
+  if (result.waitStatus !== 0) {
+    // The send was accepted but the run never exited: the product failed.
+    results.push({
+      case: name,
+      verdict: 'FAIL',
+      detail: `interrupt accepted (GenerateConsoleCtrlEvent ok) but the child never exited ` +
+        `(waitStatus ${result.waitStatus}); cancelled=${cancelled} graceful=${terminationGraceful} ` +
+        `${stragglers} straggler(s), stderr: ${stderrText.trim().split('\n').slice(-2).join(' | ')}`
+    });
+    return;
+  }
+  if (cancelled && stragglers === 0) {
+    results.push({ case: name, verdict: 'PASS', detail: `reported cancelled, exit ${result.exitCode}, 0 stragglers` });
     return;
   }
   results.push({
     case: name,
     verdict: 'FAIL',
-    detail: `interrupt accepted but the run did not report cancelled (exit ${exit.code}, ${stragglers} straggler(s))`
+    detail: `interrupt delivered but the run did not report cancelled (exit ${result.exitCode}, ` +
+      `${stragglers} straggler(s), cancelled=${cancelled}, graceful=${terminationGraceful})`
   });
 }
 

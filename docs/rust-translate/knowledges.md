@@ -219,5 +219,24 @@ The Dashboard exposes **35** primary verbs organized into tabs:
   console), not `CREATE_NEW_PROCESS_GROUP`, and Node's `process.kill` has no
   negative-pid semantics there — so a harness signal built on both throws ESRCH
   against a live child. The Windows delivery for a console control event is
-  `GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, groupId)` against a
-  `CREATE_NEW_PROCESS_GROUP` child sharing the caller's console (defect R7).
+  `GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid)` against a
+  `CreateProcessW(..., CREATE_NEW_PROCESS_GROUP)` child sharing the caller's
+  console (defect R7; applied in session 8 as
+  `tests/rust-ticket03-signal.ps1`, driven by case 1 of
+  `tests/rust-ticket03-interrupt.mjs`).
+* **`CreateProcessW` through PowerShell P/Invoke needs BOTH `lpApplicationName`
+  and a valid `lpCurrentDirectory`.** Passing `$null` for the application name
+  fails with win32 123 (invalid name) or 3 (path not found) even when the
+  command line is well-formed, and a bad cwd fails the same way; supplying the
+  exe path in both places is the reliable recipe. `lpCommandLine` still carries
+  the full line (exe + argv).
+* **Node cannot hand an argument array to `pwsh -File`.** `powershell -File
+  script.ps1 -Arguments @("a","b")` mangles the array into one unusable token
+  (a `ping -n` arrived as a bare `-n`); pass argv as a JSON file and let the
+  script re-read it (`-ArgumentsFile` in the signal helper).
+* **A test that asserts on a file being concurrently hand-edited measures the
+  editor, not the artifact.** The whkdrc binding assertions now read the
+  **committed** template (`git show HEAD:config/whkdrc` — what an install
+  actually ships) and a working-copy divergence is reported as a loud WARN
+  naming the missing binding, never a FAIL and never a silent pass
+  (session 8, `tests/ticket05-06-07.tests.ps1`).

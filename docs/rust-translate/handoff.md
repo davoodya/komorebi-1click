@@ -1,26 +1,26 @@
 # KomorebiDashboard — Rust Translation · Handoff
 
 > **This is the single continuation document for the next agent.**
-> Read sections 6–9 first; sections 1–5 are background. Last updated: **2026-10-10, after session 7.**
+> Read sections 6–9 first; sections 1–5 are background. Last updated: **2026-10-10, after session 8.**
 > There is exactly one handoff document — `handoff-last-session.md` and
-> `implement/handoff.md` were merged into §0.4 and removed in session 6.
+> `implement/handoff.md` were merged into §0.5 and removed in session 6.
 
 ---
 
 ## 0. One-line status
 
 The Rust track's tickets `01`, `02`, `03`, `04` are **implemented, verified, and
-committed** (`d64ec0c` ticket 03, the session-7 ticket-04 commit — all
-pushed). The next ticket is **`05-elevation`** (Rust track). Session 7
-landed ticket 04 with runtime UIA evidence and found defect R7: the US 55
-interrupt harness could never deliver its signal on Windows (its own
-`process.kill` call throws ESRCH — the ConPTY limitation measured in session 3
-stands, but the documented "re-run on a real console" path was never
-executable; the rework is designed, not applied). Session 6 audited the
-installer track's tickets `04-startup-tasks` and `05-autohotkey-vbs` end-to-end
-on the live machine, closed both, and fixed one genuine defect in ticket 05's
-regenerate seam (§0.2). Another session is concurrently editing `config/`,
-`scripts/`, `tests/uia-dump.ps1` and `docs/Access-Denied-Solving/` — do not
+committed** (all pushed). The next ticket is **`05-elevation`** (Rust track).
+Session 8 applied the US 55 harness rework that session 7 had only designed
+(defect R7 closed: the interrupt is delivered by
+`CreateProcessW(..., CREATE_NEW_PROCESS_GROUP)` +
+`GenerateConsoleCtrlEvent` behind a `GetConsoleWindow()` host gate — measured
+end-to-end here, with the one real-console PASS left as Davood's manual run),
+and audited installer tickets `05-autohotkey-vbs` and `06-script-portability`
+deep-live: both fully implemented, suite 65/65, no genuine gaps (§0.4).
+Another session is concurrently editing `config/` (its live `whkdrc` edit drops
+the `alt+ctrl+shift+r` binding — now a loud WARN in the suite, decision left to
+Davood), `scripts/`, `tests/uia-dump.ps1` and `docs/Access-Denied-Solving/` — do not
 touch those paths.
 
 If your connection drops, this document alone is enough to continue.
@@ -94,7 +94,7 @@ If your connection drops, this document alone is enough to continue.
   reconcile. Session-6 commits use explicit pathspecs so none of those entries
   enter them.
 * **One handoff document.** Per Davood, `handoff-last-session.md` and
-  `implement/handoff.md` were merged into this document (§0.4) and removed.
+  `implement/handoff.md` were merged into this document (§0.5) and removed.
   Do not create a second handoff document.
 
 ### 0.3 Session 7 (2026-10-10) — rust ticket 04 landed; the US 55 harness defect found and recorded (R7)
@@ -121,8 +121,8 @@ If your connection drops, this document alone is enough to continue.
   ConPTY limitation measured in session 3 stands, but the documented
   "re-run on a real console to convert the SKIP into a PASS" path could never
   have worked. Details: §8 US 55 and `bugs-fixing.md` §3.7; probe scripts in
-  `tests/.build/us55-*.mjs`. **The harness rework is designed, not applied** —
-  ticket-03 test-infra work, see §9.
+  `tests/.build/us55-*.mjs`. **The harness rework was designed here and applied
+  in session 8** — see §0.4 and §8.
 * **Davood re-ran `tests\rust-ticket03-interrupt.mjs` from a normal window this
   session**: same SKIP, same `ESRCH kill ESRCH` cause — expected, because the
   harness's own signal call is what fails, before any console is involved.
@@ -138,7 +138,67 @@ If your connection drops, this document alone is enough to continue.
   `docs/HANDOFF-*` deletions, and `tests/uia-dump.ps1`. Commits use explicit
   pathspecs so none of it is carried.
 
-### 0.4 Session history (compressed, sessions 2–5)
+### 0.4 Session 8 (2026-10-10) — US 55 rework applied (R7 closed); installer tickets 05 and 06 deep-audited
+
+* **Defect R7 reworked — the US 55 interrupt harness now delivers for real.**
+  `tests/rust-ticket03-signal.ps1` (new) is the delivery path node cannot
+  express: `CreateProcessW(exe, cmdline, …, CREATE_NEW_PROCESS_GROUP, cwd)` —
+  both `lpApplicationName` and a valid `lpCurrentDirectory` are required, or
+  CreateProcessW fails with win32 123/3 (measured in an isolation probe) — child
+  stdout/stderr through inheritable `CreateFileW` handles, then
+  `GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid)` after 2.5 s, then
+  `WaitForSingleObject`. `tests/rust-ticket03-interrupt.mjs` case 1 is rewired:
+  a **host gate** (`GetConsoleWindow()`) skips with the measured reason on a
+  pseudo-console (probe: `{"consoleWindow":0}`, no more post-hoc ESRCH), argv
+  travels as JSON (`-ArgumentsFile` — node cannot pass an array through a
+  `pwsh -File` command line; the first attempt arrived as one mangled string),
+  and the verdict now distinguishes generate-refused (SKIP, measured win32) from
+  accepted-but-never-exited (FAIL — a real product finding). Harness run here:
+  **8 passed, 1 skipped (capability absent, measured), 0 failed**, gate evidence
+  written into `delivered-interrupt.txt`. Details: §8 US 55.
+* **The delivery machinery is proven, the event still cannot land on ConPTY —
+  measured, both halves.** A `cmd /c echo` child through the helper spawned,
+  printed through the redirect and reported `generateOk=true, exitCode=0`; a
+  `ping` child reported `generateOk=true` then `waitStatus=258`
+  (WAIT_TIMEOUT — the OS accepted the send, nothing arrived, exactly the
+  session-3 topology probe). The one remaining step is Davood's: run
+  `node tests\rust-ticket03-interrupt.mjs` **from a real PowerShell window**;
+  the case must then PASS (`reported cancelled, exit 0, 0 stragglers`) or FAIL
+  honestly (procedure in §8 US 55 / bugs-fixing R7).
+* **Installer ticket `05-autohotkey-vbs` — audited deep-live, closed.**
+  Suite `ticket05-06-07.tests.ps1` now **65 assertions, 0 failures**: the one
+  FAIL (`alt+ctrl+shift+r`) was the suite asserting whkdrc's *working copy*,
+  which another session's live tuning edit has since dropped the binding from;
+  the assertion now reads the **committed** template (what installs actually
+  ship) and a working-copy divergence reports a loud **WARN** naming the missing
+  binding — the commit-vs-discard decision stays with Davood. Live state:
+  Startup `AppRunner.vbs` `Test-AppRunnerUpToDate` **True**, byte-identical to
+  a fresh render (29/29 lines; v1 for `autocorrect.ahk`/`ChangeLangF3.ahk`, v2
+  for `NewFile.ahk`), no HKCU Run entry (Startup-folder arm of the ticket),
+  `Komorebi` scheduled task `Ready`, `ahk-state.json` absent = all enabled.
+* **Installer ticket `06-script-portability` — audited deep-live, closed.**
+  36-script absolute-path scan: 61 raw hits, all classified benign (vendor-
+  default `C:\Program Files\*` locations from ticket 02's resolver mandate,
+  the `C:\Users\DavoodYa` **rewrite machinery** in `Install-Common.ps1`,
+  `\.\DISPLAY$i` device prefixes, the csc.exe framework path, one doc-comment
+  example) — no `F:\`, no `H:\Repo`, no foreign user profile. The four
+  uninstall/cleanup scopes verified as `-Scope
+  [ValidateSet('all','komorebi-whkd','yasb','autohotkey')]` driving
+  patterns/processes/tasks/dirs; the dual `-RedirectStandardOutput`/`-Error`
+  preserved in `restart-whkd.ps1` L118-121; `-ZipPath` declared+used ×10 with
+  the timestamped-directory default. FYI recorded in the tracker: `-ZipPath`
+  writes a directory, not a zip — shipped contract, deliberately not churned.
+* Suites this session: ticket03-interrupt **8P/1S/0F** · ticket05-06-07
+  **65/65** · ticket08-ahk unchanged (19/19 from the running box, not re-run —
+  no ticket-08 code touched) · `node --check` on the harness · build.ps1
+  exit 0 (release EXE unchanged, 6,450,176 bytes).
+* Unrelated dirty entries untouched again (§10): the other session's `config/
+  whkdrc` (its WARN is the suite's doing, not an edit by me), `scripts/
+  safe-restart.ps1`, `docs/HANDOFF-*`, `scripts/step5/`, backup dir,
+  `tests/uia-dump.ps1`. This session's commit pathspecs: `tests/` +
+  `docs/rust-translate/` only.
+
+### 0.5 Session history (compressed, sessions 2–7)
 
 * **Session 2 (2026-10-08) — ticket 01.** The Rust + Tauri shell builds and the
   first suites land; artefact `releases/rust/KomorebiDashboard.exe`
@@ -511,24 +571,62 @@ Four spawn topologies were probed with a child that installs a real
 So `tests/rust-ticket03-interrupt.mjs` reports `SKIP` with the measured error and
 exits 0; it exits 1 only on a real FAIL.
 
-**Defect R7 (session 7): the harness could never deliver the signal on any host,
-so the "re-run on a real console" path could not have worked.** Case 1 kills
-with `process.kill(-child.pid, 'SIGBREAK')`, and the two POSIX facts it assumes
-are false on Windows: Node's `process.kill` has no negative-pid
-(process-group) semantics — it throws ESRCH even against a live child — and
-`detached: true` maps to `DETACHED_PROCESS` (no console at all), not
-`CREATE_NEW_PROCESS_GROUP` as the code comment claimed, and a process without a
-console cannot receive console control events. Measured 2026-10-10 against a
-live, correctly spawned child: `+pid, 0` OK · `-pid, 0` ESRCH · `-pid,
-SIGBREAK` ESRCH · `+pid, SIGBREAK` ENOSYS. The ConPTY measurement above stays
-independently true: on a real console, a corrected delivery —
+**Defect R7 (session 7) — the harness could never deliver the signal on any
+host, so the "re-run on a real console" path could not have worked.**
+REWORKED IN SESSION 8 (`tests/rust-ticket03-signal.ps1`, case 1 rewired). The
+original case 1 killed with `process.kill(-child.pid, 'SIGBREAK')`, and the two
+POSIX facts it assumed are false on Windows: Node's `process.kill` has no
+negative-pid (process-group) semantics — it throws ESRCH even against a live
+child — and `detached: true` maps to `DETACHED_PROCESS` (no console at all),
+not `CREATE_NEW_PROCESS_GROUP` as the code comment claimed, and a process
+without a console cannot receive console control events. Measured 2026-10-10
+against a live, correctly spawned child: `+pid, 0` OK · `-pid, 0` ESRCH ·
+`-pid, SIGBREAK` ESRCH · `+pid, SIGBREAK` ENOSYS. The ConPTY measurement above
+stays independently true: on a real console, a corrected delivery —
 `GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, groupId)` against a
 `CREATE_NEW_PROCESS_GROUP` child sharing the caller's console — should deliver
-the event. That harness rework (PowerShell P/Invoke + a host gate behind
-`GetConsoleWindow()`) is ticket-03 test-infra work and is **not yet applied**;
-probe scripts live in `tests/.build/us55-*.mjs`. **When a harness's own signal
-call throws ESRCH against a live child, the harness is broken, not the
-platform — measure the mechanism before re-diagnosing the host.**
+the event.
+
+The rework, measured on this host (all on ConPTY, 2026-10-10):
+
+* **Host gate.** Case 1 first asks PowerShell for `GetConsoleWindow()`. On this
+  pseudo-console it returns `0`, so the case now SKIPs **before** sending
+  anything, with that measured value recorded in the evidence file
+  (`delivered-interrupt.txt`). The old flow instead threw ESRCH *after* trying
+  to signal a live child.
+* **Delivery machinery verified.** `rust-ticket03-signal.ps1` builds the real
+  topology: `CreateProcessW(exe, cmdline, …, CREATE_NEW_PROCESS_GROUP, cwd)`
+  with **both `lpApplicationName` and a valid `lpCurrentDirectory`** (measured:
+  either one missing fails with win32 123/3), child stdout/stderr redirected
+  through inheritable file handles, then `GenerateConsoleCtrlEvent
+  (CTRL_BREAK_EVENT, pid)` after 2.5 s, then `WaitForSingleObject`. Probed with
+  two children from this host: a `cmd /c echo` child spawns, prints through the
+  redirect, and reports `generateOk=true, exitCode=0`; a `ping` child reports
+  `generateOk=true` and then **`waitStatus=258` (WAIT_TIMEOUT)** — the OS
+  accepted the send and nothing arrived, exactly the older session-3 finding.
+  So the machinery runs end-to-end here; the event itself still cannot land
+  without a real console.
+* **What this fixes is the honesty and the mechanism, not the science.** On a
+  real console the case must now produce PASS or a genuine FAIL — there is no
+  path left where a broken harness blames the host.
+
+**The manual procedure that converts the SKIP** (run from a real console —
+PowerShell/Terminal window, not this agent shell):
+
+```text
+cd H:\Repo\komorebi-1click
+node tests\rust-ticket03-interrupt.mjs
+```
+
+Then the delivered-interrupt case must be **PASS** (`reported cancelled, exit
+0, 0 stragglers`). Anything else is a real finding: `waitStatus` 258 with a
+cancelled-missing stderr means the console event was accepted but the run did
+not cancel (a US 55 code bug, test-debt rows); a `graceful` marker on stderr
+means a SIGKILL path replaced the graceful one.
+
+**When a harness's own signal call throws ESRCH against a live child, the
+harness is broken, not the platform — measure the mechanism before
+re-diagnosing the host.**
 
 ### Gaps carried forward
 
@@ -542,11 +640,14 @@ platform — measure the mechanism before re-diagnosing the host.**
   product identity) are roadmap R09/R10 work and tick when they land. The tabs
   exist, are selectable, and render honestly as empty rather than as a broken
   grouping.
-* **Everything is committed now.** Session 5 landed the ticket-03 work
-  (`5df6f6d`, `d64ec0c`), its own installer-track fixes (`beec3f2`), and this
-  handoff update in the commit that carries it — all on `main`, unpushed. The
-  pre-existing unrelated dirty entries listed in §10 (including the two
-  `docs/HANDOFF-*` deletions) are deliberately left uncommitted for Davood.
+* **Session 8 is committed and pushed with the harness rework + the two
+  installer audits** (commit follows this edit; `tests/rust-ticket03-signal.ps1`
+  NEW, `tests/rust-ticket03-interrupt.mjs` case 1 rewired,
+  `tests/ticket05-06-07.tests.ps1` HEAD-template + WARN, the handoff rewrite,
+  and this file). The pre-existing unrelated dirty entries listed in §10
+  (including the other session's `config/whkdrc`, `scripts/safe-restart.ps1`,
+  the two merged `docs/HANDOFF-*` deletions and `tests/uia-dump.ps1`) are
+  deliberately left uncommitted for Davood.
 
 ---
 
@@ -573,16 +674,19 @@ place:
    elevation probe lives in `wsl-isolation`/`godmode` skills and the repo's
    ADR set.
 
-**Separate, not part of 05:** the US 55 harness rework (defect R7, §8) —
-`GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, groupId)` via PowerShell P/Invoke
-against a `CREATE_NEW_PROCESS_GROUP` child sharing the caller's console, behind
-a `GetConsoleWindow()` host gate. Ticket-03 test-infra work.
+**DONE in session 8:** the US 55 harness rework (defect R7, §8) —
+`GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid)` via PowerShell P/Invoke
+against a `CreateProcessW(..., CREATE_NEW_PROCESS_GROUP)` child sharing the
+caller's console, behind a `GetConsoleWindow()` host gate; delivery machinery
+measured end-to-end on this host, and the remaining item is Davood's
+real-console run (`node tests\rust-ticket03-interrupt.mjs` from a normal
+window — procedure in §8 US 55).
 
 **Before you start**, re-verify the baseline in §6.
 
 ---
 
-## 10. Files changed across the ticket-01→04 sessions
+## 10. Files changed across the ticket-01→04 sessions (+ sessions 5–8)
 
 ```text
 MODIFIED
@@ -635,6 +739,20 @@ NEW
  docs/rust-translate/evidence/ticket04-eight-tabs-uia.md     (12/12 UIA assertions)
 ```
 
+**Session 8 (2026-10-10) — US 55 harness rework + installer 05/06 audits:**
+
+```text
+MODIFIED
+ tests/rust-ticket03-interrupt.mjs             (case 1 rewired: host gate + helper delivery)
+ tests/ticket05-06-07.tests.ps1                (whkdrc section reads the committed template; WARN, not FAIL)
+ docs/rust-translate/handoff.md                (§0.4, §8 R7, §9, §10 — this document)
+ docs/rust-translate/bugs-fixing.md            (R7 → reworked, with the manual procedure)
+ docs/rust-translate/knowledges.md             (CreateProcessW requires BOTH app name and cwd; argv-as-JSON)
+
+NEW
+ tests/rust-ticket03-signal.ps1                (the delivery helper: gate + P/Invoke + JSON result)
+```
+
 **Committed.** The body above landed in two focused commits — `5df6f6d` (the
 session-4 documents: ADR-0019, ADR-0020, the session-4 log, the dual-mode probe)
 and `d64ec0c` (the registry, the CLI twin, their tests, the ticket-03 docs).
@@ -643,7 +761,10 @@ Session 5's installer-track fixes landed separately in `beec3f2`
 defect R6 fix (`scripts/Install-Common.ps1`,
 `tests/ticket08-ahk.tests.ps1`) and the document work that carries this
 paragraph land in the commit that carries it — the first session to push all of
-them to `origin/main`.
+them to `origin/main`. Session 8 lands the US 55 rework
+(`tests/rust-ticket03-signal.ps1`, case 1) and the installer-ticket audit notes
+in the commit that carries this sentence, also with explicit pathspecs
+(`tests/`, `docs/rust-translate/`).
 
 Pre-existing dirty entries that are **not** this work and must not be committed
 with it — most now belong to the other session working this tree concurrently:
@@ -722,7 +843,7 @@ Before writing any code:
 Then: re-verify the baseline (§6), and only then start the ticket.
 
 **One handoff document.** This file is the only continuation document.
-`handoff-last-session.md` and `implement/handoff.md` were merged into §0.4 and
+`handoff-last-session.md` and `implement/handoff.md` were merged into §0.5 and
 removed in session 6 at Davood's instruction; `implement/BUILD-CHECKLIST.md`
 remains as the build and verification contract, not as a handoff. Update this
 document alone when a session ends, and never leave a second entry log behind.

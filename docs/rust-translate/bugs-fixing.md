@@ -257,14 +257,25 @@ This document aggregates and synthesizes all defects, architectural traps, edge 
   Measured 2026-10-10 against a live, correctly-spawned child:
   `+pid, 0` OK; `-pid, 0` ESRCH; `-pid, SIGBREAK` ESRCH; `+pid, SIGBREAK`
   ENOSYS.
-- **Fix & Invariant (designed, ticket 03 test-infra work, not yet applied):**
-  the delivery must be a real `GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT,
-  groupId)` — P/Invoke from PowerShell, the same family as the session-3
-  probes and no new dependency — against a child created with
-  `CREATE_NEW_PROCESS_GROUP` that shares the caller's console, behind a host
-  gate that reports SKIP with the *measured* reason when no real console
-  exists. The independent ConPTY limitation stays true (session-3's
-  four-topology measurement): from a pseudo-console, even a correct call
-  delivers nothing. **When a harness's own signal call throws ESRCH against a
-  live child, the harness is broken, not the platform — measure the mechanism
-  before re-diagnosing the host.**
+- **Fix & Invariant (APPLIED, session 8, ticket 03 test-infra work):** the
+  delivery is now a real `GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid)` —
+  P/Invoke from `tests/rust-ticket03-signal.ps1`, no new dependency — against a
+  child created with `CreateProcessW(..., CREATE_NEW_PROCESS_GROUP)` that shares
+  the caller's console, behind a `GetConsoleWindow()` host gate that reports
+  SKIP with the *measured* reason when no real console exists. Measured
+  2026-10-10 on ConPTY: gate returns `{"consoleWindow":0}` (case SKIPs before
+  sending anything, gate value in `delivered-interrupt.txt`); `cmd /c echo`
+  child → `generateOk=true, exitCode=0` with output through the redirect;
+  `ping` child → `generateOk=true, waitStatus=258` (accepted, nothing arrived).
+  Harness: 8 passed / 1 measured skip / 0 failed. Two mechanism facts measured
+  on the way: **`CreateProcessW` needs BOTH `lpApplicationName` and a valid
+  `lpCurrentDirectory`** (either missing fails with win32 123 / 3), and node
+  cannot pass an array through a `pwsh -File` command line — argv travels as a
+  JSON file (`-ArgumentsFile`). The independent ConPTY limitation stays true
+  (session-3's four-topology measurement): from a pseudo-console, even a
+  correct call delivers nothing. The one remaining step is the real-console
+  run (`node tests\rust-ticket03-interrupt.mjs` from a normal PowerShell
+  window): PASS `reported cancelled, exit 0, 0 stragglers`, or a genuine FAIL.
+  **When a harness's own signal call throws ESRCH against a live child, the
+  harness is broken, not the platform — measure the mechanism before
+  re-diagnosing the host.**

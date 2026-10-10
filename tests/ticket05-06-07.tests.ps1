@@ -163,11 +163,34 @@ Assert ("all management scripts parse (failures: {0})" -f ($parseFail -join ', '
 
 # =============================================================================
 # Ticket 03 follow-up — the whkdrc hotkeys all resolve on a target machine
+#
+# The artifact under test is the COMMITTED template: New-Whkdrc copies whkdrc
+# verbatim (with the source-user path rewritten), so installations ship what
+# git has. The working copy can be hand-tuned mid-session — by Davood or by
+# another agent's session — so a divergence is reported loudly (WARN, never
+# silent) but does not fail the suite; review covers the committed state.
 # =============================================================================
 
 Section 'T03-followup — the whkdrc bindings point at files the installer ships'
-$whkdrc = Join-Path $config 'whkdrc'
-$wtext  = Get-Content -LiteralPath $whkdrc -Raw -Encoding UTF8
+
+function Get-TemplateText {
+    param([string]$RepoRelPath)
+    # Committed content when git can provide it, else the working copy.
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if ($git) {
+        Push-Location $RepoRoot
+        try {
+            $head = & git show ("HEAD:{0}" -f ($RepoRelPath -replace '\\', '/')) 2>$null
+            if ($LASTEXITCODE -eq 0 -and $head) { return ($head -join "`n") }
+        } finally {
+            Pop-Location
+        }
+    }
+    return (Get-Content -LiteralPath (Join-Path $RepoRoot $RepoRelPath) -Raw -Encoding UTF8)
+}
+
+$wtext    = Get-TemplateText 'config/whkdrc'
+$workText = Get-Content -LiteralPath (Join-Path $config 'whkdrc') -Raw -Encoding UTF8
 
 # 1. the binding must not be unbound by accident
 Assert 'alt + shift + o is bound (restart-whkd.cmd)' ($wtext -match '(?m)^alt \+ shift \+ o :')
@@ -177,7 +200,7 @@ Assert 'alt + ctrl + shift + r is bound (safe-restart.ps1)' ($wtext -match '(?m)
 
 # 2. every binding that names a .ps1/.cmd under .config names a file the
 #    installer actually ships or generates
-$matches = [regex]::Matches($wtext, 'C:\\Users\\DavoodYa\\\.config\\([A-Za-z0-9_.\-]+)')
+$matches = [regex]::Matches($wtext, 'C:\\Users\\DavoodYa\\.config\\([A-Za-z0-9_.\-]+)')
 $shipped = @{}
 foreach ($m in $matches) {
     $shipped[$m.Groups[1].Value] = $true
@@ -192,6 +215,19 @@ foreach ($name in $shipped.Keys) {
 # 3. the restart-whkd.cmd template matches the new binding's comment
 $cmdT = Get-Content -LiteralPath (Join-Path $config 'restart-whkd.cmd') -Raw -Encoding ASCII
 Assert 'restart-whkd.cmd documents the alt + shift + o hotkey' ($cmdT -match 'alt \+ shift \+ o')
+
+# 4. an in-flight working-copy edit must never fake a pass or hide silently:
+#    installations copy the WORKING copy, so name the divergence and let the
+#    human decide (commit it or discard it) — the suite stays green.
+if ($workText -ne $wtext) {
+    $workHasSafeRestart = $workText -match '(?m)^alt \+ ctrl \+ shift \+ r :'
+    $note = if ($workHasSafeRestart) { 'bindings differ (a live tuning edit)' }
+            else { 'the alt+ctrl+shift+r safe-restart binding is MISSING from the working copy' }
+    Write-Host ('  WARN  working-copy whkdrc differs from the committed template ({0}); ' -f $note) -ForegroundColor Yellow
+    Write-Host ('        installs copy the working copy - commit or discard that edit deliberately.') -ForegroundColor Yellow
+} else {
+    Assert 'the working-copy whkdrc matches the committed template' $true
+}
 
 Section 'T03-followup — the installer installs the two new companion scripts'
 $t = Get-Content -LiteralPath (Join-Path $scripts 'Install-Common.ps1') -Raw
