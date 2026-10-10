@@ -19,7 +19,9 @@
 //      requested, not assumed.
 //   3. Runs the installer with -NoProfile -ExecutionPolicy Bypass and
 //      -SkipElevationCheck (it already elevated, so the script's own prompt
-//      would be a redundant second UAC dialog).
+//      would be a redundant second UAC dialog). The switch goes AFTER -File:
+//      PowerShell's own argument parser owns everything before -File and
+//      rejects an unknown switch there, so the ordering is load-bearing.
 //   4. Forwards the installer's exit code verbatim. Exit 0 is success, and the
 //      installer uses 1/2/3/4/10 to say exactly which stage failed. Swallowing
 //      it once reported a broken install as a success, so it is returned
@@ -83,13 +85,21 @@ internal static class Program
                 return ExitNoInstaller;
             }
 
-            // Already elevated (the relaunch below, or an admin double-click)?
+#if !K1C_TEST_FORCE_ELEVATED
+            // Already elevated (the relaunch above, or an admin double-click)?
             // Then run the installer directly.
-            if (IsElevated())
-                return RunInstaller(installer, args);
-
-            // Not elevated: ask for it, wait, and forward the child's code.
-            return RelaunchElevated(selfDir, installer, args);
+            if (!IsElevated())
+            {
+                // Not elevated: ask for it, wait, and forward the child's
+                // code.
+                return RelaunchElevated(selfDir, installer, args);
+            }
+#else
+            // Build-time hook for the wrapper test: K1C_TEST_FORCE_ELEVATED
+            // jumps straight to RunInstaller so a test can EXECUTE the built
+            // binary without a UAC prompt. Production builds never define it.
+#endif
+            return RunInstaller(installer, args);
         }
         catch (Exception ex)
         {
@@ -179,14 +189,26 @@ internal static class Program
         }
 
         string quotedInstaller = "\"" + installer + "\"";
+        // -SkipElevationCheck is a PARAMETER OF THE INSTALLER SCRIPT, so it
+        // must come AFTER -File. Before the fix (2026-10-10) it sat between
+        // -ExecutionPolicy and -File, where PowerShell's own launcher parser
+        // rejected it ("The term '-SkipElevationCheck' is not recognized"),
+        // exited 1/64 and never ran the installer - invisible to the user,
+        // because this GUI wrapper has no console to show the error in.
         var psi = new ProcessStartInfo
         {
             FileName = shell,
             UseShellExecute = false,
+            // Capture the shell's own stderr so a launch failure lands in the
+            // log instead of disappearing: this wrapper has no console, so
+            // anything PowerShell prints before the installer starts would
+            // otherwise be seen by nobody. The installer's own output is not
+            // redirected, so its console window still reaches the user.
+            RedirectStandardError = true,
             // Wait for the installer's real console window; the wrapper has no
             // console of its own, so the output must go straight to the user.
-            Arguments = "-NoProfile -ExecutionPolicy Bypass " + InstallerSwitch
-                      + " -File " + quotedInstaller + " " + BuildArgs(args),
+            Arguments = "-NoProfile -ExecutionPolicy Bypass -File " + quotedInstaller
+                      + " " + InstallerSwitch + " " + BuildArgs(args),
             WorkingDirectory = Path.GetDirectoryName(installer),
         };
 
@@ -197,10 +219,27 @@ internal static class Program
                 Report("the installer process did not start");
                 return ExitSelfFailed;
             }
+            // Drain stderr before WaitForExit so a chatty shell can never
+            // deadlock the wrapper on a full pipe.
+            string shellError = child.StandardError.ReadToEnd();
             child.WaitForExit();
+            int code = child.ExitCode;
+            if (code != 0 && !string.IsNullOrWhiteSpace(shellError))
+            {
+                // The shell ran but failed without the installer reporting
+                // (e.g. it rejected the argument list again). Say so, instead
+                // of silently forwarding a bare exit code to nothing.
+                Log("PowerShell host exited " + code
+                    + " without running the installer. stderr: " + shellError);
+                Report("The PowerShell host did not run the installer (exit code "
+                     + code + ")." + Environment.NewLine
+                     + "Details were written to "
+                     + Path.Combine(Path.GetTempPath(), "komorebi-install.log")
+                     + ".");
+            }
             // Forwarded verbatim. The installer uses 1/2/3/4/10 to name the
             // failing stage and 0 for success; the wrapper adds nothing.
-            return child.ExitCode;
+            return code;
         }
     }
 

@@ -70,6 +70,17 @@
       "note": "Reference only. NOT invoked by Install.ps1 (ADR-0010): the v1 compiler cannot compile the v2 script, and the working mechanism is .ahk scripts launched by a generated AppRunner.vbs. Provenance: this byte-for-byte identical file is shipped by the AutoHotkey 1.1.30.00 installer (C:\\Program Files\\AutoHotkey\\Ahk2Exe.exe). It is NOT the Compiler/Ahk2Exe.exe member of the v1.1.37.02 release zip (that file has a different SHA256).",
       "sha256": "E54A599B19BAA5C1688849BBAE7A9CF049EEFCCD4F704C67941B40DA13A625B2",
       "size_bytes": 995328
+    },
+    {
+      "file": "docs/Access-Denied-Solving/Komorebi-Patched/komorebi.exe",
+      "product": "Komorebi (patched for the access-denied defect)",
+      "version": "0.1.41 + access-denied patch (issue #1463)",
+      "vendor": "LGUG2Z / patched in-repo",
+      "license": "licenses/LICENSE-komorebi.md",
+      "official_release_url": "https://github.com/LGUG2Z/komorebi/releases/download/v0.1.41/komorebi-0.1.41-x86_64.msi",
+      "note": "PRE-PATCHED build of the MSI-installed komorebi.exe: byte-identical to what docs/Access-Denied-Solving/Access-Denied-0x80070005-fixing.ps1 produces (two call sites patched, file offsets 0x2898E9 and 0x28D7E4). Deployed over the MSI-installed binary by Install-KomorebiPatch after the Komorebi MSI step, SHA256-verified before and after. Fixes the 'Access is denied' (0x80070005) child-VOC crash that kills komorebi ~2s after an elevated Windows Terminal opens konsole. The pristine original is preserved in this folder as komorebi.exe.orig.",
+      "sha256": "52B631CDCC5E5495342542740A52F57594B9B540E24E2888BD23F1D41B7E3ABB",
+      "size_bytes": 14667264
     }
   ]
 }

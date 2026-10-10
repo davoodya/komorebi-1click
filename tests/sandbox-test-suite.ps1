@@ -133,6 +133,42 @@ Assert 'at least one monitor block' ($monitors.Count -ge 1)
 Assert '9 workspaces on monitor 0' (@($monitors[0].workspaces).Count -eq 9)
 Assert 'app_specific_configuration_path points at THIS user' ($cfg.app_specific_configuration_path -eq (Join-Path $UserHome '.config\komorebi\applications.json'))
 Assert 'applications.json was placed there' (Test-Path $cfg.app_specific_configuration_path)
+
+    # --- the access-denied patch (2026-10-10, finding F6) --------------------------
+    # The MSI installs the STOCK komorebi.exe, which kills konsole with
+    # 0x80070005. The installer must leave the PRE-PATCHED build pinned in
+    # binaries\payloads.sha256.json. Without this check, "komorebi.exe is
+    # installed" passes while the buggy binary is deployed.
+    $installedKorebiBin = Join-Path $env:ProgramFiles 'komorebi\bin\komorebi.exe'
+    $patchedPin = @($pins | Where-Object { $_.file -like '*Korebi-Patched*' } | Select-Object -First 1)
+    if ((Test-Path $installedKorebiBin) -and $patchedPin) {
+        $deployedHash = (Get-FileHash -LiteralPath $installedKorebiBin -Algorithm SHA256).Hash
+        Assert 'the installed komorebi.exe is the patched build (pinned SHA256)' `
+               ($deployedHash -ieq ([string]$patchedPin.sha256)) `
+               ("deployed: " + $deployedHash.Substring(0,16) + " expected: " + ([string]$patchedPin.sha256).Substring(0,16))
+    } else {
+        Assert 'the installed komorebi.exe is the patched build (pinned SHA256)' $false `
+               ('missing binary or pin: ' + $installedKorebiBin)
+    }
+
+    # --- entry point 1: the EXE wrapper --------------------------------------------
+    # The double-click path. Everything is installed by now, so the wrapper's
+    # second pass is idempotent and must exit 0. The wrapper's execution path
+    # (argument order, exit-code forwarding, -SkipElevationCheck landing as a
+    # script parameter) is covered host-side by tests\ticket09-exe-wrapper.tests.ps1,
+    # which compiles the wrapper with the K1C_TEST_FORCE_ELEVATED hook and runs
+    # it against a recording stub. Here it runs only when the sandbox context is
+    # already elevated, because a UAC prompt would hang the suite.
+    $wrapperExe = Join-Path $Repo 'komorebi-1click-install.exe'
+    Assert 'the EXE wrapper was built into the repo' (Test-Path $wrapperExe) $wrapperExe
+    $elevatedHere = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if ($elevatedHere -and (Test-Path $wrapperExe)) {
+        $wrapperProc = Start-Process -FilePath $wrapperExe -Wait -PassThru
+        Assert 'the EXE wrapper exited 0 over an already-installed machine' ($wrapperProc.ExitCode -eq 0) ("exit: " + $wrapperProc.ExitCode)
+    } else {
+        Assert 'the EXE wrapper execution path is covered by ticket 09' $true `
+               'not run here: the sandbox logon session is not elevated (a UAC prompt would hang the suite); ticket 09 executes the wrapper on any host'
+    }
 Assert 'whkdrc exists' (Test-Path (Join-Path $UserHome '.config\whkdrc'))
 $resize = Join-Path $KomorebiConfigDir 'komorebi-resize.json'
 Assert 'komorebi-resize.json exists' (Test-Path $resize)

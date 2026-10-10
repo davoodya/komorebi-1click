@@ -162,8 +162,89 @@ function Assert-RunningElevated {
     Report-InstallerFailure `
         -Step   'Elevation check' `
         -Cause  'This installer is not running with administrator privileges, but the MSIs install into C:\Program Files.' `
-        -Remedy 'Relaunch as administrator: right-click Install.ps1 (or Install.exe) and choose "Run as administrator", or run it from an elevated PowerShell window.'
+        -Remedy 'Relaunch as administrator: right-click Install.ps1 (or komorebi-1click-install.exe) and choose "Run as administrator", or run it from an elevated PowerShell window.'
     throw 'Installer is not elevated'
+}
+
+<#
+.SYNOPSIS
+    Runs the installer with administrator privileges: silently when it already
+    has them, otherwise by relaunching the script through the UAC prompt and
+    forwarding the outcome.
+.DESCRIPTION
+    The MSIs write into C:\Program Files, so elevation is mandatory. A
+    non-elevated run used to be *refused* (print a report, throw, exit 1) —
+    and because the launcher window closed immediately after, the double-click
+    and "Run with PowerShell" paths just looked dead ("nothing happened and
+    it didn't proceed"). The installer now asks for elevation itself, exactly
+    like the EXE wrapper does, so one interaction reaches the install.
+
+    -SkipElevationCheck bypasses this entirely: the EXE wrapper elevates
+    first, and the Sandbox suite runs pre-elevated.
+
+    The KOMOREBI_1CLICK_ELEVATED_LAUNCH marker makes the relaunched child
+    refuse loudly instead of raising a second prompt if the elevation did not
+    actually take.
+#>
+function Invoke-InstallerElevation {
+    param([string[]]$Arguments)
+
+    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [System.Security.Principal.WindowsPrincipal]$identity
+    if ($principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Write-Step 'Running as Administrator.'
+        return
+    }
+
+    if ($env:KOMOREBI_1CLICK_ELEVATED_LAUNCH -or -not $PSCommandPath) {
+        # Already relaunched once (or running from memory without a file to
+        # re-execute): report and refuse rather than prompt again.
+        Assert-RunningElevated
+    }
+
+    Write-Host ''
+    Write-Host '  Administrator privileges are required. Approve the Windows' -ForegroundColor Yellow
+    Write-Host '  elevation prompt to continue the installation.' -ForegroundColor Yellow
+    Write-Host ''
+
+    # Build the child argument string the way the wrapper does: .NET
+    # Framework's ProcessStartInfo has no ArgumentList, so quote only values
+    # that actually need it.
+    $shell = (Get-Process -Id $PID).Path
+    $childArgs = '-NoProfile -ExecutionPolicy Bypass -File "' + $PSCommandPath + '"'
+    if ($Arguments) { $childArgs += ' ' + ($Arguments -join ' ') }
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName        = $shell
+    $psi.Arguments       = $childArgs
+    $psi.UseShellExecute = $true          # required for the runas verb
+    $psi.Verb            = 'runas'
+    $psi.WorkingDirectory = Split-Path $PSCommandPath -Parent
+
+    # The marker stops a still-non-elevated child from prompting forever.
+    $env:KOMOREBI_1CLICK_ELEVATED_LAUNCH = '1'
+
+    try {
+        $elevated = [System.Diagnostics.Process]::Start($psi)
+    } catch {
+        $env:KOMOREBI_1CLICK_ELEVATED_LAUNCH = $null
+        Report-InstallerFailure `
+            -Step   'Elevation check' `
+            -Cause  'The elevation request was declined or could not be started.' `
+            -Remedy 'Run Install.ps1 again and approve the elevation prompt, or right-click it and choose "Run as administrator".'
+        throw 'Elevation was declined'
+    }
+
+    if ($null -eq $elevated) {
+        Report-InstallerFailure `
+            -Step   'Elevation check' `
+            -Cause  'The elevated relaunch did not start.' `
+            -Remedy 'Run Install.ps1 again and approve the elevation prompt, or right-click it and choose "Run as administrator".'
+        throw 'Elevation failed'
+    }
+
+    $elevated.WaitForExit()
+    exit $elevated.ExitCode
 }
 
 # ===========================================================================
@@ -616,6 +697,150 @@ function Install-Yasb {
 }
 
 # ===========================================================================
+# Komorebi access-denied patch (docs/Access-Denied-Solving, 2026-10-10)
+#
+# WHAT IT FIXES
+#   komorebi 0.1.41 spawns konsole/konsole subprocesses under an elevated
+#   Windows Terminal. Without the patch the child VOC bridge dies with
+#   "Access is denied" (0x80070005) and takes the whole WM down two seconds
+#   later. The defect is GitHub issue #1463; upstream has not shipped a fix in
+#   0.1.41 (2025-08-25) and no later stable exists, so the repair has to be
+#   local.
+#
+# WHAT THIS DOES
+#   The repository carries the PRE-PATCHED komorebi.exe under
+#   docs\Access-Denied-Solving\Komorebi-Patched — byte-identical to what
+#   Access-Denied-0x80070005-fixing.ps1 produces on the unpatched binary.
+#   This step deploys it over the MSI-installed one right after the Komorebi
+#   install step, hash-verified before and after, idempotent on re-runs.
+#
+# WHY A COPY AND NOT A PATCH-AT-INSTALL-TIME
+#   The two patch sites (0x2898E9 and 0x28D7E4) are binary offsets pinned to
+#   this exact komorebi 0.1.41 build. Copying a pinned, hash-verified binary
+#   is deterministic and auditable; re-deriving the offsets at install time
+#   risks patching a future build wrongly. The fixing script stays the
+#   manual-repair path.
+#
+# The pristine MSI binary is preserved once as komorebi.exe.orig next to the
+# installed binary, and a running instance is stopped and restarted through
+# the same socket pairing whkd needs (LGUG2Z/komorebi#956).
+# ===========================================================================
+
+# SHA256 of the committed pre-patched binary; also pinned in
+# binaries\payloads.sha256.json (verified on every run by
+# Test-PayloadIntegrity, and again here before anything is copied).
+$script:KomorebiPatchedSha256 = '52B631CDCC5E5495342542740A52F57594B9B540E24E2888BD23F1D41B7E3ABB'
+
+function Get-PatchedKomorebiPath {
+    param([Parameter(Mandatory)][string]$RepoRoot)
+    return (Join-Path $RepoRoot 'docs\Access-Denied-Solving\Komorebi-Patched\komorebi.exe')
+}
+
+function Install-KomorebiPatch {
+    <#
+    .SYNOPSIS
+        Deploys the pre-patched komorebi.exe over the MSI-installed binary.
+    .DESCRIPTION
+        State-detected: when the installed binary already matches the pinned
+        hash, nothing happens. The SHA256 of the repository copy is checked
+        before the copy and the deployed file is re-checked after it, so the
+        step can never claim success without the exact binary being present.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$RepoRoot,
+        [string]$PatchedSha256 = $script:KomorebiPatchedSha256
+    )
+
+    $stepName  = 'Install the Komorebi access-denied patch'
+    $komorebic = Join-Path $env:ProgramFiles 'komorebi\bin\komorebic.exe'
+    $installed = Join-Path $env:ProgramFiles 'komorebi\bin\komorebi.exe'
+
+    if (-not (Test-Path -LiteralPath $installed)) {
+        Report-InstallerFailure `
+            -Step   $stepName `
+            -Cause  "The installed komorebi.exe was not found at '$installed'." `
+            -Remedy 'Install the Komorebi MSI first (its step runs before this one).'
+        throw 'komorebi.exe is missing'
+    }
+
+    $patched = Get-PatchedKomorebiPath -RepoRoot $RepoRoot
+    if (-not (Test-Path -LiteralPath $patched)) {
+        Report-InstallerFailure `
+            -Step   $stepName `
+            -Cause  "The pre-patched komorebi.exe is missing from the repository: $patched" `
+            -Remedy 'Re-clone or re-extract this repository; the patched binary is part of it (docs\Access-Denied-Solving\Komorebi-Patched).'
+        throw 'patched komorebi.exe is missing from the repository'
+    }
+
+    $patchedHash = (Get-FileHash -LiteralPath $patched -Algorithm SHA256).Hash
+    if ($patchedHash -ne $PatchedSha256) {
+        Report-InstallerFailure `
+            -Step   $stepName `
+            -Cause  ("The repository's pre-patched binary does not match its pin.`n      expected {0}`n      found    {1}" -f $PatchedSha256, $patchedHash) `
+            -Remedy 'Re-extract docs\Access-Denied-Solving from the repository. Do not continue: an unverified binary must never be deployed.'
+        throw 'patched komorebi.exe failed integrity verification'
+    }
+
+    $installedHash = (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash
+    if ($installedHash -eq $PatchedSha256) {
+        Write-StepSkipped 'Komorebi already carries the access-denied patch.'
+        return
+    }
+
+    # --- stop the running pair so the binary file is not locked ---------------
+    $wasRunning = ($null -ne (Get-Process -Name 'komorebi' -ErrorAction SilentlyContinue))
+    if ($wasRunning) {
+        if (Test-Path -LiteralPath $komorebic) { & $komorebic stop --whkd 2>&1 | Out-Null }
+        Start-Sleep -Seconds 2
+        if ($null -ne (Get-Process -Name 'komorebi' -ErrorAction SilentlyContinue)) {
+            Stop-Process -Name 'komorebi' -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 1
+        }
+    }
+
+    # --- preserve the pristine binary once, then deploy the patched one ------
+    try {
+        $orig = Join-Path (Split-Path $installed -Parent) 'komorebi.exe.orig'
+        if (-not (Test-Path -LiteralPath $orig)) {
+            Copy-Item -LiteralPath $installed -Destination $orig -Force
+            Write-StepDone 'Preserved the original binary as komorebi.exe.orig.'
+        }
+        Copy-Item -LiteralPath $patched -Destination $installed -Force
+    } catch {
+        Report-InstallerFailure `
+            -Step   $stepName `
+            -Cause  $_.Exception.Message `
+            -Remedy 'Close Komorebi and try again; an antivirus or a running instance can hold the binary open.'
+        throw
+    }
+
+    # --- verify the deployed file is EXACTLY the pinned binary -----------------
+    $afterHash = (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash
+    if ($afterHash -ne $PatchedSha256) {
+        Report-InstallerFailure `
+            -Step   $stepName `
+            -Cause  ("The deployed komorebi.exe does not match the pinned patched binary.`n      expected {0}`n      found    {1}" -f $PatchedSha256, $afterHash) `
+            -Remedy 'Restore komorebi.exe.orig from the install directory and investigate; the copy did not land intact.'
+        throw 'patched komorebi.exe did not deploy intact'
+    }
+
+    # --- bring the pair back through the same socket pairing whkd needs --------
+    if ($wasRunning -and (Test-Path -LiteralPath $komorebic)) {
+        & $komorebic start --whkd 2>&1 | Out-Null
+        Start-Sleep -Seconds 2
+        if ($null -eq (Get-Process -Name 'komorebi' -ErrorAction SilentlyContinue)) {
+            Report-InstallerFailure `
+                -Step   $stepName `
+                -Cause  'The patched binary was deployed, but Komorebi did not start again.' `
+                -Remedy 'Start it once manually from the Komorebi logon task, or run: komorebic start --whkd'
+            throw 'Komorebi did not restart after the patch'
+        }
+    }
+
+    Write-StepDone 'Komorebi replaced with the patched build (SHA256 verified).'
+}
+
+# ===========================================================================
 # Configuration generation (ticket 03, ADR-0003 + ADR-0016)
 #
 # The repo ships PORTABLE templates under config\ and the installer writes the
@@ -762,7 +987,7 @@ function Test-ConfigUpToDate {
 
 function New-KomorebiConfig {
     # Emits the final komorebi.json: template + generated monitors + generated
-    # display_index_preferences + the target user's applications.json path.
+    # display_index_preferences + the ASC (app-specific configuration) path.
     param(
         [Parameter(Mandatory)][string]   $TemplatePath,
         [Parameter(Mandatory)][string]   $OutputPath,
@@ -771,13 +996,38 @@ function New-KomorebiConfig {
 
     $template = Get-Content $TemplatePath -Raw -Encoding UTF8 | ConvertFrom-Json
 
-    # app_specific_configuration_path must be rewritten to the TARGET user's
-    # absolute path. Rust does not expand PowerShell-style env vars in this
-    # field, so it cannot be shipped as "%USERPROFILE%\applications.json"
-    # (handoff bug #4: the source config literally contained the source
-    # machine's C:\Users\DavoodYa path).
-    $applicationsPath = Join-Path $env:USERPROFILE 'applications.json'
-    $template.app_specific_configuration_path = $applicationsPath
+    # app_specific_configuration_path handling (repaired 2026-10-10, finding F3
+    # of docs/installation-system-repairing/AUDIT-2026-10-10). Previous state:
+    # this line rewrote the template's portable value to the absolute
+    # %USERPROFILE%\applications.json, while the installer actually deploys the
+    # file at %USERPROFILE%\.config\komorebi\applications.json - komorebi then
+    # died reading the missing file (gate 4, asc.rs:40) after every successful
+    # install. komorebic check cannot catch that (verified: it exits 0 with a
+    # non-existent ASC file), so Install-Configuration re-validates it below.
+    #
+    # The template already carries the correct portable form and komorebi DOES
+    # expand %VAR% in this field (verified against 0.1.41 in
+    # docs/Access-Denied-Solving/Access-Denied-(0x80070005)-Bug-Solving.md), so
+    # the portable value is kept as-is in the default layout, and only an
+    # active KOMOREBI_CONFIG_HOME override (which relocates the whole config
+    # home) forces an absolute path.
+    $configHome  = Split-Path $OutputPath -Parent
+    $deployedAsc = Join-Path $configHome 'applications.json'
+
+    $ascPath = $template.app_specific_configuration_path
+    if ($env:KOMOREBI_CONFIG_HOME) {
+        $template.app_specific_configuration_path = $deployedAsc
+    } elseif ($ascPath) {
+        $expanded = [Environment]::ExpandEnvironmentVariables([string]$ascPath).Replace('\\', '\')
+        if ($expanded -ne $deployedAsc) {
+            # The template value points somewhere other than where this
+            # installer deploys the file: normalise to the deployed location,
+            # kept portable via %USERPROFILE% so no machine path is baked in.
+            $template.app_specific_configuration_path = '%USERPROFILE%\.config\komorebi\applications.json'
+        }
+    } else {
+        $template.app_specific_configuration_path = '%USERPROFILE%\.config\komorebi\applications.json'
+    }
 
     $template.monitors = Get-GeneratedMonitors -Displays $Displays
     $template.display_index_preferences = Get-GeneratedDisplayIndexPreferences -Displays $Displays
@@ -1011,6 +1261,27 @@ function Install-Configuration {
     } else {
         New-ApplicationsJson -TemplatePath (Join-Path $template 'applications.json') -OutputPath $applications
         Write-StepDone 'applications.json copied.'
+    }
+
+    # --- ASC path sanity (repaired 2026-10-10, finding F3) -------------------
+    # komorebi reads the file referenced by app_specific_configuration_path at
+    # startup and dies (asc.rs:40) when it is missing — AFTER a "successful"
+    # install. komorebic check does not catch that (verified against 0.1.41:
+    # it exits 0 with a non-existent ASC file), so the generated config is
+    # checked here, while the user is still watching the install.
+    if (Test-Path -LiteralPath $komorebiJson) {
+        $ascRef = (Get-Content -LiteralPath $komorebiJson -Raw -Encoding UTF8 | ConvertFrom-Json).app_specific_configuration_path
+        if ($ascRef) {
+            $ascExpanded = [Environment]::ExpandEnvironmentVariables([string]$ascRef).Replace('\\', '\')
+            if (-not (Test-Path -LiteralPath $ascExpanded)) {
+                Report-InstallerFailure `
+                    -Step   'Generate configuration' `
+                    -Cause  "app_specific_configuration_path in the generated config points at '$ascExpanded', which does not exist. Komorebi would die reading it on startup." `
+                    -Remedy "Repair the path in $komorebiJson by hand, or move applications.json next to it, then re-run this installer."
+                throw 'generated komorebi.json references a missing applications.json'
+            }
+            Write-StepDone ("ASC path resolves to the deployed applications.json ({0})." -f $ascExpanded)
+        }
     }
 
     # --- resize state (created empty, always) --------------------------------

@@ -2,26 +2,40 @@
 <#
 .SYNOPSIS
     Komorebi-1click installer.
+
 .DESCRIPTION
-    Installs Komorebi, WHKD, YASB and AutoHotkey (v1 + v2) completely offline
-    from the binaries committed to this repository.
+    Installs Komorebi (plus its access-denied patch), WHKD, YASB and AutoHotkey
+    (v1 + v2) completely offline from the binaries committed to this repository.
 
     Every payload's SHA256 is verified before anything is installed. Each step
     detects the current state first and skips itself when the target is already
     present, so re-running this script always reaches the same end state.
 
-    Configuration generation, startup tasks and the AutoHotkey startup launcher
-    are handled by later tickets (03, 04, 05); this script installs only the
-    five binaries.
+    Entry points (all converge on this file):
+      1. komorebi-1click-install.exe  (double-click; the wrapper elevates, then
+         runs this script with -SkipElevationCheck)
+      2. .\Install.ps1                (direct run; this script self-elevates
+         through the UAC prompt when it is not already elevated)
+      3. irm <url>/install.ps1 | iex  (bootstraps the repo, then re-execs this
+         file; the same self-elevation applies afterwards)
+
+    After the binaries, configuration generation, startup tasks and the
+    AutoHotkey startup launcher complete the machine.
+
 .NOTES
     All paths resolve from this script's own location, so the repository can be
     cloned anywhere. There are no machine-specific constants in this file.
+
+    Exit codes: 0 success · 1 a primary component (or the payload verification)
+    failed, or elevation could not be obtained · 2 configuration generation
+    failed · 3 startup tasks failed · 4 the AutoHotkey launcher failed ·
+    10 usable but incomplete (a secondary component failed).
 #>
 
 [CmdletBinding()]
 param(
-    # Skip the interactive elevation prompt. Intended for automation and for the
-    # EXE wrapper, which elevates before it launches this script.
+    # Skip the elevation check entirely. Intended for the EXE wrapper (it
+    # elevates before it launches this script) and for automation.
     [switch]$SkipElevationCheck
 )
 
@@ -101,16 +115,30 @@ Write-InstallerHeader
 # ---------------------------------------------------------------------------
 # Preconditions: architecture and elevation.
 # ---------------------------------------------------------------------------
+# Elevation is MANDATORY (the MSIs write into C:\Program Files). Instead of
+# refusing a non-elevated run — which read as "nothing happened" because the
+# launcher window closed immediately afterwards — the installer now asks for
+# elevation itself, exactly like the EXE wrapper does. On success it relaunches
+# this same script elevated and forwards the outcome; the exit code of the
+# elevated run is this run's exit code. -SkipElevationCheck bypasses the whole
+# mechanism (used by the wrapper, which has already elevated, and by the
+# Sandbox suite, which runs pre-elevated).
 
 Assert-ArchitectureSupported
 
 if (-not $SkipElevationCheck) {
-    Assert-RunningElevated
+    $forwarded = @()
+    foreach ($key in $PSBoundParameters.Keys) {
+        if ($key -ne 'SkipElevationCheck') { $forwarded += "-$key" }
+    }
+    Invoke-InstallerElevation -Arguments $forwarded
 }
 
 # ---------------------------------------------------------------------------
 # Load the payload manifest and verify every binary before touching the system.
 # ---------------------------------------------------------------------------
+# The manifest covers every redistributed binary, including the pre-patched
+# komorebi.exe deployed by the Komorebi patch step below.
 
 $payloads = Get-PayloadManifest -Path (Join-Path $RepoRoot 'binaries\payloads.sha256.json')
 
@@ -121,9 +149,10 @@ Test-PayloadIntegrity -Payloads $payloads -RepoRoot $RepoRoot
 # ---------------------------------------------------------------------------
 # The components are split into two priority classes:
 #
-#   PRIMARY (Komorebi, WHKD) — the window manager and its hotkey layer. If one
-#     of these fails, the product cannot function at all, so the run aborts
-#     immediately with the failure and its fix shown to the user.
+#   PRIMARY (Komorebi, the Komorebi patch, WHKD) — the window manager, its
+#     required access-denied patch, and the hotkey layer. If one of these
+#     fails, the product cannot function at all, so the run aborts immediately
+#     with the failure and its fix shown to the user.
 #
 #   SECONDARY (YASB, AutoHotkey v1/v2) — the status bar and the user scripts.
 #     These are conveniences on top of the WM; a machine without them is still
@@ -137,6 +166,7 @@ Test-PayloadIntegrity -Payloads $payloads -RepoRoot $RepoRoot
 
 $primarySteps = @(
     @{ Name = 'Komorebi';    Action = { Install-Komorebi    -Payload $payloads['komorebi-0.1.41-x86_64.msi'] } }
+    @{ Name = 'Komorebi patch'; Action = { Install-KomorebiPatch -RepoRoot $RepoRoot -PatchedSha256 $payloads['komorebi.exe'].sha256 } }
     @{ Name = 'WHKD';        Action = { Install-Whkd        -Payload $payloads['whkd-0.2.10-x86_64.msi'] } }
 )
 
@@ -171,8 +201,10 @@ foreach ($step in $secondarySteps) {
 # ---------------------------------------------------------------------------
 # Writes the Komorebi/WHKD/YASB configuration for THIS machine from the portable
 # templates: the monitor layout and display preferences are generated from the
-# live hardware, everything else is copied byte-for-byte, and komorebic check
-# validates the result before success is declared.
+# live hardware, everything else is copied byte-for-byte, the generated
+# app_specific_configuration_path is validated against the deployed
+# applications.json, and komorebic check validates the result before success
+# is declared.
 
 $configurationFailed = $false
 try {

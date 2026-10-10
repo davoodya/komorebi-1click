@@ -6,23 +6,29 @@ started 2026-10-10.
 
 | File | What it is |
 |---|---|
-| **`HANDOFF-2026-10-10.md`** | **Read this first.** Project summary, current state, and the ordered repair plan for the implementation phase. |
+| **`handoff.md`** | **Read this first. Always current.** The live-machine rule, owner decisions, what is fixed and verified (with evidence), the exact next action, traps, and open questions. |
 | `AUDIT-2026-10-10-entry-points-and-config.md` | The full audit: every finding with its runtime evidence, the hypotheses that were eliminated, and the requirements the new installer version must satisfy. |
+| `IMPLEMENTATION-2026-10-10.md` | Implementation log: each change with the commands run and the observed output. |
+| `HANDOFF-2026-10-10.md` | The audit-phase handoff (superseded in part by `handoff.md`). |
 
 ## The problem this folder exists for
 
-Both documented entry points are currently broken on a fresh launch:
+Both documented entry points were broken on a fresh launch:
 
 1. `komorebi-1click-install.exe` — **proven** to never launch the installer at
    all (fatal argument-order bug in the C# wrapper; exit 64, zero output, the
-   child PowerShell never runs).
-2. `Install.ps1` — no code defect, but it stops at its own elevation gate when
+   child PowerShell never runs). **FIXED 2026-10-10** (switch moved after `-File`;
+   verified by executing the rebuilt wrapper next to a stub).
+2. `Install.ps1` — no code defect, but it stopped at its own elevation gate when
    launched directly by a non-admin user (which is the reference account).
+   **FIXED 2026-10-10** (self-elevates via UAC and forwards the child exit code).
 
-Plus one latent install-time bug that recreates the 2026-10-10
-`applications.json` crash class on any fresh machine, and the new requirement:
-**after the Komorebi MSI step the installer must deploy the patched
-`komorebi.exe`** (`docs/Access-Denied-Solving/Komorebi-Patched/komorebi.exe`)
-instead of leaving the pristine MSI binary in place.
+Plus one latent install-time bug that recreated the 2026-10-10
+`applications.json` crash class on any fresh machine (**FIXED**: portable ASC path +
+existence guard), and the new requirement — **after the Komorebi MSI step the
+installer deploys the patched `komorebi.exe`**
+(`docs/Access-Denied-Solving/Korebi-Patched/komorebi.exe`, pinned in
+`binaries/payloads.sha256.json`) instead of leaving the pristine MSI binary.
+**DONE 2026-10-10**; end-to-end proof is the pending Windows Sandbox run.
 
-See the two documents above for the evidence and the plan.
+See `handoff.md` for the current state and the next action.

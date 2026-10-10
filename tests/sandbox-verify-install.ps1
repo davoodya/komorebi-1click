@@ -243,6 +243,19 @@ $script:WhkdRc          = Join-Path $script:UserConfig 'whkdrc'
 $script:YasbCfg         = Join-Path $script:UserConfig 'yasb\config.yaml'
 $script:InstallLog      = Join-Path $LogDir 'install.log'
 
+# The pinned SHA256 of the PRE-PATCHED komorebi.exe the installer must deploy
+# over the MSI's stock binary (2026-10-10, finding F6). The stock komorebi.exe
+# kills konsole with 0x80070005; the install is only correct when the pinned
+# build is what actually lands in Program Files. Empty when the manifest has
+# no entry, which the phases below report as a failure rather than skip.
+$script:KomorebiBinPin = ''
+$pinsFile = Join-Path $Repo 'binaries\payloads.sha256.json'
+if (Test-Path $pinsFile) {
+    $pinEntry = @((Get-Content $pinsFile -Raw | ConvertFrom-Json).binaries) |
+                Where-Object { $_.file -like '*Korebi-Patched*' } | Select-Object -First 1
+    if ($pinEntry) { $script:KomorebiBinPin = [string]$pinEntry.sha256 }
+}
+
 Write-Host '=====================================================================' -ForegroundColor White
 Write-Host ' komorebi-1click — SANDBOX verification (installs and uninstalls)' -ForegroundColor White
 Write-Host '=====================================================================' -ForegroundColor White
@@ -322,6 +335,49 @@ Phase 'P2-install' {
     # --- binaries landed ------------------------------------------------------------
     Assert 'komorebi.exe is installed' (Test-Path $script:KomorebiBin) $script:KomorebiBin
     Assert 'komorebic.exe is installed' (Test-Path $script:KomorebicBin) $script:KomorebicBin
+
+    # --- the access-denied patch (2026-10-10, finding F6) ----------------------------
+    # The MSI installs the STOCK komorebi.exe, which dies on konsole with
+    # 0x80070005 (the bug that killed the live WM). The installer must replace
+    # it with the pre-patched binary pinned in binaries\payloads.sha256.json.
+    # Without this check, "komorebi.exe is installed" passes while the buggy
+    # binary is deployed. The pristine MSI binary is preserved as .orig.
+    if ($script:KomorebiBinPin) {
+        $deployed = (Get-FileHash -LiteralPath $script:KomorebiBin -Algorithm SHA256).Hash
+        Assert 'the installed komorebi.exe is the patched build (pinned SHA256)' `
+               ($deployed -ieq $script:KomorebiBinPin) `
+               ("deployed: " + $deployed.Substring(0,16) + " expected: " + $script:KomorebiBinPin.Substring(0,16))
+        Assert 'the pristine MSI binary is preserved as komorebi.exe.orig' `
+               (Test-Path (Join-Path $script:KomorebiInstall 'bin\komorebi.exe.orig'))
+    } else {
+        Assert 'the manifest pins the patched komorebi.exe' $false `
+               'no Korebi-Patched entry in binaries\payloads.sha256.json'
+    }
+
+    # --- entry point 1: the EXE wrapper ----------------------------------------------
+    # The double-click path is the advertised one. The wrapper locates
+    # Install.ps1 next to itself, relaunches elevated when it must, and
+    # forwards the installer's exit code. Everything is installed by now, so
+    # this pass is fully idempotent and must exit 0.
+    #
+    # The sandbox logon session is not elevated, and an unapproved UAC prompt
+    # would hang the suite, so the real run only happens when the context
+    # already is. The wrapper's execution path (argument order, exit-code
+    # forwarding, the switch landing as a script parameter) is covered by
+    # tests\ticket09-exe-wrapper.tests.ps1 on any machine, which compiles the
+    # wrapper with the K1C_TEST_FORCE_ELEVATED hook and runs it against a
+    # recording stub. That is the test that caught the 2026-10-10 bug where
+    # -SkipElevationCheck sat before -File and the installer never ran.
+    $exe = Join-Path $Repo 'komorebi-1click-install.exe'
+    $elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    Assert 'the EXE wrapper was built into the repo' (Test-Path $exe) $exe
+    if ($elevated -and (Test-Path $exe)) {
+        $exeProc = Start-Process -FilePath $exe -Wait -PassThru
+        Assert 'the EXE wrapper exited 0 over an already-installed machine' ($exeProc.ExitCode -eq 0) ("exit: " + $exeProc.ExitCode)
+    } else {
+        Assert 'the EXE wrapper execution path is covered by ticket 09' $true `
+               'not run here: the sandbox logon session is not elevated (a UAC prompt would hang the suite); ticket 09 executes the wrapper on any host'
+    }
 
     # --- config generated -----------------------------------------------------------
     Assert 'the generated komorebi.json exists' (Test-Path $script:KomorebiCfg) $script:KomorebiCfg

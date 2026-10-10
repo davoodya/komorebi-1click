@@ -14,7 +14,7 @@
       code. Every real decision stays in Install.ps1, so the wrapper rarely
       changes and can never disagree with the .ps1 path.
 
-      Two historical defects make several of these assertions load-bearing:
+      Three historical defects make several of these assertions load-bearing:
 
       * The wrapper originally SWALLOWED the installer's exit code. An install
         that failed with exit 10 ("usable but incomplete") reported success to
@@ -26,9 +26,18 @@
         Join-Path. The bootstrap now has an explicit in-memory branch that
         fetches the repository archive and re-execs the real Install.ps1.
 
-      The EXE is genuinely compiled here with csc.exe, because building a
-      wrapper is not an install: it touches no process, no task and no
-      registry. Only the *build* runs; the installer is never launched.
+      * The worst one: the wrapper put ITS OWN PowerShell switch
+        (-SkipElevationCheck) BEFORE -File in the argument string, so the
+        PowerShell host itself tried to parse it and crashed BEFORE the
+        installer ran. Every run ended in exit 64 (pwsh) / exit 1 (5.1) with
+        no visible output, because the wrapper has no console. A grep-style
+        test could not catch it — the string "-SkipElevationCheck" was present
+        and looked correct — so the runnable tests below COMPILE the wrapper
+        and EXECUTE it next to a recording stub, and assert that the stub
+        actually ran. The stub is a temp file, never the real installer, and
+        the wrapper build with /define:K1C_TEST_FORCE_ELEVATED skips the UAC
+        relaunch, so running this file on a developer machine is safe and
+        touches no system state.
 
     Run:
       powershell -ExecutionPolicy Bypass -File tests/ticket09-exe-wrapper.tests.ps1
@@ -82,6 +91,24 @@ Assert 'forwards the child exit code'            ($src -match 'ExitCode')
 Assert 'passes -SkipElevationCheck (it already elevated)' ($src -match '-SkipElevationCheck')
 
 # ---------------------------------------------------------------------------
+# THE argument-order regression (2026-10-10)
+#
+# -SkipElevationCheck is a parameter of the INSTALLER, so it must sit AFTER
+# -File. Before the fix it sat between -ExecutionPolicy Bypass and -File, and
+# the PowerShell host itself rejected it (exit 64) without ever starting the
+# installer — silently, because the wrapper is a GUI binary with no console.
+# These file greps pin the source; the execution tests below prove the
+# behaviour.
+# ---------------------------------------------------------------------------
+Assert '-SkipElevationCheck comes AFTER -File in the argument string' (
+    $src -match '-File "\s*\+\s*quotedInstaller\s*\+\s*" " \+ InstallerSwitch'
+)
+Assert 'the old order (switch before -File) is gone' (
+    $src -notmatch '-ExecutionPolicy Bypass " \+ InstallerSwitch'
+)
+Assert 'shell stderr is captured for invisible failures' ($src -match 'RedirectStandardError')
+
+# ---------------------------------------------------------------------------
 # It is a THIN wrapper: no installer logic leaked into C#.
 # A wrapper that grew payload verification or MSI logic would drift from the
 # .ps1 path, which is exactly what ADR-0004 forbids.
@@ -126,8 +153,9 @@ Assert 'the build step does not invoke Inno'      ($codeOnly -notmatch 'Inno')
 Assert 'the build step compiles with csc.exe'     ($codeOnly -match 'csc\.exe')
 
 # ---------------------------------------------------------------------------
-# It really compiles. This is the assertion that would catch a wrapper that
-# looks right and does not build.
+# It really compiles, and it really RUNS. This is the assertion that would have
+# caught the argument-order bug: the wrapper compiles fine, has every string
+# present, and still never starts the installer.
 # ---------------------------------------------------------------------------
 Assert 'csc.exe is present on this machine' (Test-Path $csc)
 
@@ -153,11 +181,83 @@ if (Test-Path $builtExe) {
 }
 
 # ---------------------------------------------------------------------------
+# EXECUTION: the wrapper must actually start Install.ps1, with the switch it
+# owns (-SkipElevationCheck) delivered as a script parameter.
+#
+# A fresh temp dir is the wrapper's world: the EXE sits there next to a
+# recording STUB Install.ps1, so the real installer is never launched and no
+# system state changes. K1C_TEST_FORCE_ELEVATED is a build-time hook in the
+# wrapper source that skips the UAC relaunch, which keeps this runnable test
+# non-interactive. Production binaries never define it (build-exe.ps1).
+# ---------------------------------------------------------------------------
+if ((Test-Path $csc) -and (Test-Path $csPath)) {
+    $runDir = Join-Path $env:TEMP 'komorebi-wrapper-run'
+    if (Test-Path $runDir) { Remove-Item $runDir -Recurse -Force -ErrorAction SilentlyContinue }
+    New-Item -ItemType Directory -Path $runDir -Force | Out-Null
+
+    # The stub records HOW it was called and exits with a configurable code.
+    $stubPath = Join-Path $runDir 'Install.ps1'
+    $stubExit = Join-Path $runDir 'stub-exit.txt'
+    $stubRecord = Join-Path $runDir 'stub-record.txt'
+    @"
+        param([switch]`$SkipElevationCheck)
+        `$name = if (Test-Path '$stubExit') { (Get-Content '$stubExit' -Raw).Trim() } else { '0' }
+        "bound=[`$(`$MyInvocation.BoundParameters.Keys -join ',')] args=[`$(`$args -join '|')]" |
+            Out-File -FilePath '$stubRecord' -Encoding ascii
+        exit [int]`$name
+"@ | Set-Content -LiteralPath $stubPath -Encoding UTF8
+
+    $testExe = Join-Path $runDir 'wrapper-test.exe'
+    $testBuild = (& $csc /nologo /target:winexe /optimize+ /define:K1C_TEST_FORCE_ELEVATED '/reference:System.Windows.Forms.dll' "/out:$testExe" $csPath 2>&1) -join "`n"
+    Assert 'test hook build (/define:K1C_TEST_FORCE_ELEVATED) compiles' (
+        (Test-Path $testExe) -and ($testBuild -notmatch 'error CS')
+    )
+
+    if (Test-Path $testExe) {
+        # --- run 1: a successful installer ------------------------------------
+        Set-Content -LiteralPath $stubExit -Value '0'
+        if (Test-Path $stubRecord) { Remove-Item $stubRecord -Force }
+        $p1 = Start-Process -FilePath $testExe -Wait -PassThru
+        $record = if (Test-Path $stubRecord) { Get-Content -LiteralPath $stubRecord -Raw } else { '' }
+
+        Assert 'the wrapper STARTS the installer (the regression itself)' ($record -match 'bound=\[')
+        Assert 'the installer receives -SkipElevationCheck' ($record -match 'SkipElevationCheck')
+        Assert 'no stray arguments reach the installer'      ($record -match 'args=\[\]\s*$')
+        Assert 'a successful child exit code (0) is forwarded' ($p1.ExitCode -eq 0)
+
+        # --- run 2: a failing installer ---------------------------------------
+        # The wrapper forwards the installer's codes verbatim: exit 10 means
+        # "usable but incomplete" and must NOT become a success.
+        Set-Content -LiteralPath $stubExit -Value '10'
+        if (Test-Path $stubRecord) { Remove-Item $stubRecord -Force }
+        $p2 = Start-Process -FilePath $testExe -Wait -PassThru
+        Assert 'exit code 10 ("usable but incomplete") is forwarded' ($p2.ExitCode -eq 10)
+
+        # --- run 3: arguments the user passes to the wrapper ------------------
+        if (Test-Path $stubRecord) { Remove-Item $stubRecord -Force }
+        $p3 = Start-Process -FilePath $testExe -ArgumentList '-Extra' -Wait -PassThru
+        $record3 = if (Test-Path $stubRecord) { Get-Content -LiteralPath $stubRecord -Raw } else { '' }
+        Assert 'extra wrapper arguments are forwarded to the installer' ($record3 -match '\-Extra')
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Install.ps1 must still work STANDALONE (entry point 2)
 # ---------------------------------------------------------------------------
 $inst = Get-Content -LiteralPath $instPs1 -Raw
+$lib  = Get-Content -LiteralPath (Join-Path $repo 'scripts\Install-Common.ps1') -Raw
 Assert 'Install.ps1 exposes -SkipElevationCheck' ($inst -match '\$SkipElevationCheck')
 Assert 'Install.ps1 still holds the real logic'   ($inst -match 'Test-PayloadIntegrity')
+Assert 'Install.ps1 self-elevates through the UAC prompt' ($inst -match 'Invoke-InstallerElevation')
+Assert 'the elevation relaunch is loop-guarded (env marker)' ($lib -match 'KOMOREBI_1CLICK_ELEVATED_LAUNCH')
+# The patch step name is taken from the library definition, never hard-coded:
+# the assertion then survives the library's exact spelling and still fails if
+# Install.ps1 stops calling the step.
+$patchFn = ([regex]::Match($lib, 'function (Install-K\w*Patch)')).Groups[1].Value
+Assert ('Install.ps1 installs the Komorebi access-denied patch (' + $patchFn + ')') (
+    $patchFn -and ($inst -match [regex]::Escape($patchFn))
+)
+Assert 'the wrapper path stays thin: patch logic lives in the library' ($src -notmatch 'patch')
 
 # ---------------------------------------------------------------------------
 # irm | iex (entry point 3). $PSScriptRoot is empty under `iex`, so the
