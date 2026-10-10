@@ -210,6 +210,20 @@ public class KomorebiDpi {
 }
 
 
+function Test-YasbAutostart {
+    # YASB autostarts either through its own Run key (yasbc enable-autostart,
+    # the installer's primary mechanism) or through the Startup-folder fallback
+    # shortcut. Either one counts; the check mirrors Install-Common.ps1's
+    # Test-YasbAutostartEnabled so the two surfaces cannot disagree.
+    $runKey = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue
+    if ($runKey) {
+        $entry = $runKey.PSObject.Properties | Where-Object { $_.Value -and ($_.Value -match 'yasb\.exe') }
+        if ($entry) { return $true }
+    }
+    $lnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\YASB.lnk'
+    return (Test-Path $lnk)
+}
+
 function Get-Health {
     $h = [ordered]@{
         Process        = $false
@@ -226,6 +240,9 @@ function Get-Health {
         Nameless       = @()
         ZeroContainers = @()
         GhostMaximized = @()
+        Yasb           = $false
+        YasbUptime     = 'n/a'
+        YasbAutostart  = $false
     }
     # BUG FIX: the early-return used to run BEFORE $h.Process was ever set,
     # so it always returned the empty snapshot and always said BROKEN even
@@ -234,6 +251,9 @@ function Get-Health {
     if ($proc) { $h.Process = $true; $h.ProcessUptime = Get-Uptime $proc }
     $w = Get-Process -Name whkd -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($w) { $h.Whkd = $true; $h.WhkdUptime = Get-Uptime $w }
+    $y = Get-Process -Name yasb -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($y) { $h.Yasb = $true; $h.YasbUptime = Get-Uptime $y }
+    $h.YasbAutostart = Test-YasbAutostart
 
     # PAIRING CHECK (the bug that silently kills every hotkey):
     # whkd can be alive, parsing whkdrc perfectly, and STILL be useless —
@@ -340,6 +360,8 @@ function Show-Status {
     Write-Host ('  komorebi process : {0}  (up {1})' -f $h.Process, $h.ProcessUptime) -ForegroundColor $(if ($h.Process) { 'Green' } else { 'Red' })
     Write-Host ('  socket alive     : {0}' -f $h.Socket) -ForegroundColor $(if ($h.Socket) { 'Green' } else { 'Red' })
     Write-Host ('  whkd (hotkeys)   : {0}  (up {1})' -f $h.Whkd, $h.WhkdUptime) -ForegroundColor $(if ($h.Whkd) { 'Green' } else { 'Red' })
+    Write-Host ('  yasb (status bar): {0}  (up {1})' -f $h.Yasb, $h.YasbUptime) -ForegroundColor $(if ($h.Yasb) { 'Green' } else { 'Red' })
+    Write-Host ('  yasb autostart   : {0}' -f $h.YasbAutostart) -ForegroundColor $(if ($h.YasbAutostart) { 'Green' } else { 'Red' })
     # Report the pairing separately from the process: a whkd that is alive but
     # NOT paired registers every hotkey and then drops every command, which is
     # exactly the silent failure mode this check exists to surface.
@@ -391,6 +413,18 @@ function Show-Status {
         Write-Host ''
         Write-Host '  [PROBLEM] komorebi runs but whkd does not -> NO hotkeys will work' -ForegroundColor Red
         Write-Host '     fix: run  0-SAFE-RESTART.bat  (it starts with --whkd)' -ForegroundColor Yellow
+    }
+    if (-not $h.Yasb) {
+        $problems++
+        Write-Host ''
+        Write-Host '  [PROBLEM] YASB (the status bar) is not running' -ForegroundColor Red
+        Write-Host '     fix: yasbc start - autostart brings it back at the next logon' -ForegroundColor Yellow
+    }
+    if (-not $h.YasbAutostart) {
+        $problems++
+        Write-Host ''
+        Write-Host '  [PROBLEM] YASB has no autostart entry (Run key or Startup shortcut)' -ForegroundColor Red
+        Write-Host '     fix: yasbc enable-autostart (no Administrator needed)' -ForegroundColor Yellow
     }
 
     Write-Host ''
@@ -628,6 +662,19 @@ switch ($Action) {
     'install' {
         $id = "$env:USERDOMAIN\$env:USERNAME"
 
+        # ADR-0016 is a correctness requirement, not a preference. A task
+        # registered without -RunLevel Highest cannot manage elevated windows
+        # (UIPI), and an unelevated Register-ScheduledTask silently produces
+        # exactly that task - the delayed regression ADR-0016 exists to prevent.
+        # So refuse here, before anything is built or registered: the elevated
+        # entry points are the EXE wrapper and Install.ps1.
+        $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+            [Security.Principal.WindowsBuiltInRole]::Administrator)
+        if (-not $isAdmin) {
+            $msg = "Registering the startup tasks requires an elevated shell: RunLevel Highest is mandatory, and an unelevated registration writes a task that cannot manage elevated windows. Run komorebi-1click-install.exe, or Install.ps1 via 'Run as administrator'. Refusing rather than registering a silently broken task."
+            throw $msg
+        }
+
         # Build the windowless watchdog launcher. Without it the scheduled
         # task flashes a console every interval.
         try {
@@ -666,17 +713,12 @@ switch ($Action) {
         $taskAction = New-ScheduledTaskAction -Execute $KomorebiExe -Argument 'start --whkd'
         $taskTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
         $taskTrigger.Delay = 'PT25S'   # let Windows settle and the taskbar/YASB appear
-        # Only request elevation when we actually have it. Asking for
-        # RunLevel Highest from a non-elevated shell makes Register-ScheduledTask
-        # fail, which would leave komorebi with no autostart at all.
-        $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
-            [Security.Principal.WindowsBuiltInRole]::Administrator)
-        if ($isAdmin) {
-            $principal = New-ScheduledTaskPrincipal -UserId $id -LogonType Interactive -RunLevel Highest
-        } else {
-            Write-Host '  (running unelevated: registering with the current user token)' -ForegroundColor DarkGray
-            $principal = New-ScheduledTaskPrincipal -UserId $id -LogonType Interactive
-        }
+        # The shell is elevated - the action refused above otherwise - so the
+        # task is registered Highest unconditionally. Never reintroduce the
+        # unelevated fallback: a Medium-integrity task leaves elevated windows
+        # unmanageable, and the watchdog path only reveals it after the first
+        # respawn drops Komorebi back to Medium integrity.
+        $principal = New-ScheduledTaskPrincipal -UserId $id -LogonType Interactive -RunLevel Highest
         $taskSettings = New-ScheduledTaskSettingsSet `
                         -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
                         -MultipleInstances IgnoreNew `

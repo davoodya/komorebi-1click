@@ -47,9 +47,9 @@
 
 | اسکریپت | کارکرد |
 |---|---|
-| `2-ADD-TO-STARTUP.bat` | komorebi + whkd را به startup ویندوز اضافه می‌کند (logon scheduled task + watchdog task). Idempotent — اجرای مجدد بی‌ضرر است. موتور: `komorebi-service.ps1 -Action install`. |
+| `2-ADD-TO-STARTUP.bat` | komorebi + whkd را به startup ویندوز اضافه می‌کند (logon scheduled task + watchdog task). **نیاز به shell elevated دارد** — تسک‌ها با RunLevel Highest ثبت می‌شوند (ADR-0016) و اگر elevated نباشد، اسکریپت اجازه نمی‌دهد تسکی ثبت شود که پنجره‌های elevated را مدیریت نمی‌کند. Idempotent — اجرای مجدد بی‌ضرر است. موتور: `komorebi-service.ps1 -Action install`. |
 | `3-REMOVE-FROM-STARTUP.bat` | scheduled taskها را حذف می‌کند تا komorebi دیگر با بوت اجرا نشود. session در حال اجرا را متوقف نمی‌کند. موتور: `komorebi-service.ps1 -Action uninstall`. |
-| `4-STATUS.bat` | **Read-only.** گزارش سلامت: processها، socket، مانیتورها، layouts، hotkeys، و هر مشکلی که باید بدانی. موتور: `komorebi-service.ps1 -Action status`. |
+| `4-STATUS.bat` | **Read-only.** گزارش سلامت: processها، socket، مانیتورها، layouts، hotkeys، وضعیت YASB و autostart آن، و هر مشکلی که باید بدانی. موتور: `komorebi-service.ps1 -Action status`. |
 
 ---
 

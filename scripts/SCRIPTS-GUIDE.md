@@ -46,9 +46,9 @@
 
 | Script | What it does |
 |---|---|
-| `2-ADD-TO-STARTUP.bat` | Adds komorebi + whkd to Windows startup (logon scheduled task + watchdog task). Idempotent — re-running is harmless. Engine: `komorebi-service.ps1 -Action install`. |
+| `2-ADD-TO-STARTUP.bat` | Adds komorebi + whkd to Windows startup (logon scheduled task + watchdog task). **Requires an elevated shell** — the tasks are registered at RunLevel Highest (ADR-0016), and the script refuses when unelevated instead of registering a task that cannot manage elevated windows. Idempotent — re-running is harmless. Engine: `komorebi-service.ps1 -Action install`. |
 | `3-REMOVE-FROM-STARTUP.bat` | Removes the scheduled tasks so komorebi no longer starts at boot. Does not stop the running session. Engine: `komorebi-service.ps1 -Action uninstall`. |
-| `4-STATUS.bat` | **Read-only.** Health report: processes, socket, monitors, layouts, hotkeys, and anything you should know about. Engine: `komorebi-service.ps1 -Action status`. |
+| `4-STATUS.bat` | **Read-only.** Health report: processes, socket, monitors, layouts, hotkeys, YASB status and autostart, and anything you should know about. Engine: `komorebi-service.ps1 -Action status`. |
 
 ---
 
