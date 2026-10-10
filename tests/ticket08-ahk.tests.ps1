@@ -106,6 +106,16 @@ Set-AhkEnabledState -RepoRoot $sb -State $state -StartupDirOverride $sb
 $stateFile = Join-Path $ahkDir 'ahk-state.json'
 Assert 'ahk-state.json was written' (Test-Path -LiteralPath $stateFile)
 
+# The state file alone is not the product - the Startup VBS is. Inspect what
+# Set-AhkEnabledState actually generated in the sandbox, or a renderer that
+# ignores the persisted state passes this suite while the real Startup folder
+# keeps launching a script the user disabled (the bug this assertion caught).
+$sbVbs = Join-Path $sb 'AppRunner.vbs'
+Assert 'the regenerated VBS comments out the disabled script' (
+    (@(Get-Content -LiteralPath $sbVbs) | Where-Object { $_ -like "'*autocorrect.ahk*" }).Count -eq 1)
+Assert 'the regenerated VBS keeps the re-enabled script live' (
+    (@(Get-Content -LiteralPath $sbVbs) | Where-Object { $_ -like 'RunHidden*NewFile.ahk*' }).Count -eq 1)
+
 # Set-AhkEnabledState regenerates into the REAL Startup folder. That is the
 # wrong place for a sandbox test, so verify the persistence round-trip
 # instead and regenerate into the sandbox explicitly.

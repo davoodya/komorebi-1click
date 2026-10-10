@@ -1235,6 +1235,14 @@ function Set-AhkEnabledState {
     }
     $ordered | ConvertTo-Json | Set-Content -LiteralPath $file -Encoding UTF8
 
+    # Layer the just-written state onto the in-memory manifest BEFORE rendering.
+    # Without this the file says one thing and the regenerated VBS keeps every
+    # script live: the disable appears to work until the next logon, when
+    # everything comes back. ahk-toggle.ps1 depends on this function, and the
+    # ticket-08 tests once passed with the state file correct and the generated
+    # VBS wrong, because they only round-tripped the file.
+    Apply-AhkEnabledState -RepoRoot $RepoRoot
+
     # Regenerate the Startup VBS so the change takes effect at the next logon.
     $template = Get-AppRunnerTemplate -RepoRoot $RepoRoot
     if ($StartupDirOverride) {
