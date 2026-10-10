@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { describeRun, formatDuration, formatLineCount, parseArguments, runStateLabel } from '../lib/format';
+import {
+  describeRun,
+  filterNumericValue,
+  formatDuration,
+  formatLineCount,
+  parseArguments,
+  runStateLabel
+} from '../lib/format';
 
 describe('formatDuration', () => {
   it('renders sub-second durations in milliseconds', () => {
@@ -62,5 +69,39 @@ describe('parseArguments', () => {
 
   it('does not fail on an unterminated quote', () => {
     expect(parseArguments('"C:\\half a path')).toEqual(['C:\\half a path']);
+  });
+});
+
+describe('filterNumericValue', () => {
+  // The WPF build enforced this in the row model rather than in a keystroke
+  // handler, because a keydown filter only sees typing: paste, drag-drop, IME
+  // composition and programmatic assignment all bypass it. Filtering the VALUE
+  // catches every route, and the same rule is ported here so a transparency
+  // percentage can never become garbage.
+  it('keeps digits only for a numeric row', () => {
+    // Non-ASCII is not a digit: accented letters and symbols are dropped too,
+    // which is the ASCII-digit rule the WPF row model enforced.
+    expect(filterNumericValue('8a5c', true)).toBe('85');
+    expect(filterNumericValue(' 12.5 ', true)).toBe('125');
+    expect(filterNumericValue('é8ã5', true)).toBe('85');
+  });
+
+  it('passes any text through for a row that is not numeric', () => {
+    // A backup path has slashes, dots and spaces; filtering it would corrupt it.
+    expect(filterNumericValue('C:\\my backups\\today', false)).toBe('C:\\my backups\\today');
+    expect(filterNumericValue('a b c', false)).toBe('a b c');
+  });
+
+  it('leaves an empty value empty in both modes', () => {
+    // The WPF rule returned early on empty; filtering here would too, but the
+    // result must stay the empty string rather than becoming undefined.
+    expect(filterNumericValue('', true)).toBe('');
+    expect(filterNumericValue('', false)).toBe('');
+  });
+
+  it('is what the row ends up passing as arguments', () => {
+    // End-to-end at the value seam: junk typed into a numeric row reaches the
+    // script as digits only, through parseArguments like any other value.
+    expect(parseArguments(filterNumericValue('1a2b3', true))).toEqual(['123']);
   });
 });

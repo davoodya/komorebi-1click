@@ -50,6 +50,20 @@ export function formatLineCount(lines: number): string {
 }
 
 /**
+ * Keep a numeric row's value digits-only, leaving every other value untouched.
+ *
+ * Ported from the WPF row model's OnArgumentChanged: the filter runs on the
+ * VALUE, not on a keystroke handler, because a keydown filter only ever sees
+ * typing - paste, drag-drop, IME composition and programmatic assignment all
+ * bypass it. ASCII digits only, exactly like the WPF rule, so an accented
+ * character or a symbol is dropped just like a letter. An empty value stays
+ * empty rather than turning into anything else.
+ */
+export function filterNumericValue(raw: string, numericOnly: boolean): string {
+  return numericOnly ? raw.replace(/[^0-9]/g, '') : raw;
+}
+
+/**
  * Split a row's typed value into arguments.
  *
  * Ported from the C# `SplitArguments` so a value the user typed behaves the same

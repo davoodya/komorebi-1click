@@ -238,3 +238,33 @@ This document aggregates and synthesizes all defects, architectural traps, edge 
   the two new assertions fail against the pre-fix code). **When persisted state
   drives a generated artefact, the test must read the artefact, not the
   state.**
+
+### 3.7 The Interrupt Harness Could Never Deliver Its Signal on Windows (Defect R7, session 7)
+
+- **Symptom:** case 1 of `tests/rust-ticket03-interrupt.mjs`
+  (`delivered-interrupt`) SKIPs on every host with `ESRCH kill ESRCH`, and the
+  handoff instructed "re-run on an interactive console to convert it into a
+  PASS" — a path that could never work, on any console.
+- **Root Cause:** the harness sends the interrupt with
+  `process.kill(-child.pid, 'SIGBREAK')` against a child spawned with
+  `detached: true`, and both are POSIX facts that are false on Windows:
+  1. Node's `process.kill` has no negative-pid (process-group) semantics on
+     Windows, so the call throws ESRCH even against a live child;
+  2. `detached: true` maps to `DETACHED_PROCESS` (the child gets **no
+     console**), not to `CREATE_NEW_PROCESS_GROUP` as the code comment
+     claimed — so even a well-formed signal could not reach it, because a
+     process without a console cannot receive console control events.
+  Measured 2026-10-10 against a live, correctly-spawned child:
+  `+pid, 0` OK; `-pid, 0` ESRCH; `-pid, SIGBREAK` ESRCH; `+pid, SIGBREAK`
+  ENOSYS.
+- **Fix & Invariant (designed, ticket 03 test-infra work, not yet applied):**
+  the delivery must be a real `GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT,
+  groupId)` — P/Invoke from PowerShell, the same family as the session-3
+  probes and no new dependency — against a child created with
+  `CREATE_NEW_PROCESS_GROUP` that shares the caller's console, behind a host
+  gate that reports SKIP with the *measured* reason when no real console
+  exists. The independent ConPTY limitation stays true (session-3's
+  four-topology measurement): from a pseudo-console, even a correct call
+  delivers nothing. **When a harness's own signal call throws ESRCH against a
+  live child, the harness is broken, not the platform — measure the mechanism
+  before re-diagnosing the host.**

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { dispatchVerb } from '../lib/dispatch';
+  import { filterNumericValue } from '../lib/format';
   import { console_ } from '../lib/console.svelte.ts';
   import type { RowState } from '../lib/rows.svelte.ts';
 
@@ -13,12 +14,14 @@
    *
    * The filter runs on the VALUE, not on a keydown handler, so a paste, a
    * drag-drop or an IME composition cannot smuggle a non-digit in — the same
-   * rule the WPF build enforced in its row model rather than in its view.
+   * rule the WPF build enforced in its row model rather than in its view. The
+   * rule itself lives in format.ts, tested on its own (ASCII digits only, an
+   * empty value stays empty), and this handler only applies it to the box.
    */
   function onInput(event: Event) {
     const box = event.currentTarget as HTMLInputElement;
     const raw = box.value;
-    const next = verb.numericOnly ? raw.replace(/[^0-9]/g, '') : raw;
+    const next = filterNumericValue(raw, verb.numericOnly);
     if (next !== raw) box.value = next;
     row.value = next;
   }

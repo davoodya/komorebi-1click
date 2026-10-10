@@ -205,3 +205,19 @@ The Dashboard exposes **35** primary verbs organized into tabs:
   wrapper has no console, which is why console-control-event tests SKIP there
   (defect R3), and it does not propagate WSL environment variables across the
   boundary — pass parameters explicitly.
+* **`role="tab"` buttons are TabItems in the accessibility tree, not Buttons.**
+  When runtime-verifying the strip over UIA (ticket 04, session 7), the eight
+  tab controls surfaced as `ControlType.TabItem` — `FindAll(ControlType.Button)`
+  returned zero of them while the verb action buttons on the same window were
+  ordinary Buttons. Drive them with `SelectionItemPattern.Select()` (Invoke is
+  absent), and read selection state from `SelectionItemPattern.Current.IsSelected`
+  rather than from `aria-selected` text. Filtering by Name alone is the robust
+  lookup: the tab's label also appears as the panel heading's Text element.
+  Evidence script: `tests/.build/uia-ticket04-eight-tabs.ps1`.
+* **A negative-pid `process.kill` and a `detached: true` process group are POSIX
+  facts that are false on Windows.** `detached: true` is `DETACHED_PROCESS` (no
+  console), not `CREATE_NEW_PROCESS_GROUP`, and Node's `process.kill` has no
+  negative-pid semantics there — so a harness signal built on both throws ESRCH
+  against a live child. The Windows delivery for a console control event is
+  `GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, groupId)` against a
+  `CREATE_NEW_PROCESS_GROUP` child sharing the caller's console (defect R7).

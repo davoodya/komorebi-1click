@@ -27,16 +27,39 @@ class RegistryStore {
 export const registry = new RegistryStore();
 
 /**
- * The tab the shell currently renders.
+ * The strip's selection, as reactive state the shell owns.
  *
- * Ticket 03 delivered the registry's tab grouping; ticket 04 replaces this
- * constant with the real eight-tab strip. Until then the shell renders ONE tab —
- * and it renders that tab's OWN rows, taken from the registry, rather than every
- * declared verb. The distinction matters: the tracer's placeholder returned the
- * whole table, which was exact with two verbs and would now draw an
- * administrative verb like `uninstall` inside the Debugging tab.
+ * Ticket 03 delivered the registry's tab grouping; ticket 04 replaces the
+ * one-tab placeholder with this real eight-tab strip: the user's choice
+ * lives here, and what renders is always resolved against the backend's own
+ * tab list, so the shell can never show a tab the backend does not declare nor
+ * blank out on a stale id.
  */
-export const CURRENT_TAB = 'Debugging' as const;
+class TabSelectionStore {
+  /** The tab id the user picked. Empty until they pick, or before load. */
+  selected = $state('');
+
+  select(id: string): void {
+    this.selected = id;
+  }
+}
+
+export const tabSelection = new TabSelectionStore();
+
+/**
+ * The tab to render: the selection when the backend still declares it,
+ * otherwise the first declared tab, and nothing at all before the registry
+ * loads (the strip itself iterates registry.tabs directly, so both the strip
+ * and the panel resolve their id against the same list rather than trusting
+ * the selection alone).
+ */
+export function resolveActiveTab(
+  tabs: readonly TabDefinition[],
+  selected: string
+): TabDefinition | undefined {
+  if (tabs.length === 0) return undefined;
+  return tabs.find((tab) => tab.id === selected) ?? tabs[0];
+}
 
 /**
  * The rows belonging to a tab, in registry order.

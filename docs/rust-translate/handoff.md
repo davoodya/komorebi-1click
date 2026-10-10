@@ -1,24 +1,27 @@
 # KomorebiDashboard — Rust Translation · Handoff
 
 > **This is the single continuation document for the next agent.**
-> Read sections 6–9 first; sections 1–5 are background. Last updated: **2026-10-10, after session 6.**
+> Read sections 6–9 first; sections 1–5 are background. Last updated: **2026-10-10, after session 7.**
 > There is exactly one handoff document — `handoff-last-session.md` and
-> `implement/handoff.md` were merged into §0.3 and removed in session 6.
+> `implement/handoff.md` were merged into §0.4 and removed in session 6.
 
 ---
 
 ## 0. One-line status
 
-The Rust track's tickets `01`, `02`, `03` are **implemented, verified, and
-committed** (`5df6f6d` session-4 documents, `d64ec0c` ticket 03, `beec3f2`
-installer fixes — all pushed with session 6). The next ticket is
-**`04-eight-tabs`** (Rust track). Session 6 audited the installer track's
-tickets `04-startup-tasks` and `05-autohotkey-vbs` end-to-end on the live
-machine, closed both, and fixed one genuine defect in ticket 05's regenerate
-seam (§0.2). Nothing is mid-edit; the only known gap is a host capability
-(ConPTY), not a code defect. Another session is concurrently editing
-`config/`, `scripts/step5/` and `docs/Access-Denied-Solving/` — do not touch
-those paths.
+The Rust track's tickets `01`, `02`, `03`, `04` are **implemented, verified, and
+committed** (`d64ec0c` ticket 03, the session-7 ticket-04 commit — all
+pushed). The next ticket is **`05-elevation`** (Rust track). Session 7
+landed ticket 04 with runtime UIA evidence and found defect R7: the US 55
+interrupt harness could never deliver its signal on Windows (its own
+`process.kill` call throws ESRCH — the ConPTY limitation measured in session 3
+stands, but the documented "re-run on a real console" path was never
+executable; the rework is designed, not applied). Session 6 audited the
+installer track's tickets `04-startup-tasks` and `05-autohotkey-vbs` end-to-end
+on the live machine, closed both, and fixed one genuine defect in ticket 05's
+regenerate seam (§0.2). Another session is concurrently editing `config/`,
+`scripts/`, `tests/uia-dump.ps1` and `docs/Access-Denied-Solving/` — do not
+touch those paths.
 
 If your connection drops, this document alone is enough to continue.
 
@@ -91,10 +94,51 @@ If your connection drops, this document alone is enough to continue.
   reconcile. Session-6 commits use explicit pathspecs so none of those entries
   enter them.
 * **One handoff document.** Per Davood, `handoff-last-session.md` and
-  `implement/handoff.md` were merged into this document (§0.3) and removed.
+  `implement/handoff.md` were merged into this document (§0.4) and removed.
   Do not create a second handoff document.
 
-### 0.3 Session history (compressed, sessions 2–5)
+### 0.3 Session 7 (2026-10-10) — rust ticket 04 landed; the US 55 harness defect found and recorded (R7)
+
+* **Ticket `04-eight-tabs` (Rust track) — done, runtime-verified, pushed.** The
+  strip iterates the backend's own tab list (eight `role="tab"` items, backend
+  order, nothing added), and the panel resolves its id from the same list:
+  `lib/registry.svelte.ts` gained `tabSelection` (the shell's reactive
+  selection) and `resolveActiveTab` (the selection when the backend still
+  declares it, otherwise the **first** declared tab — a stale id can never blank
+  the shell), replacing the `CURRENT_TAB` placeholder. Customization and About
+  render the empty row state honestly. Switching a tab leaves the accumulated
+  console untouched (runtime: 32 lines before, 32 after, verdict intact).
+  Evidence: `docs/rust-translate/evidence/ticket04-eight-tabs-uia.md` (12/12
+  UIA assertions on the built EXE, sha256 `8ea3c3d1fe18ee4f…`). The numeric
+  filter was extracted to `filterNumericValue` in `lib/format.ts` with its own
+  tests; `src/tests/tabs.spec.ts` (10 tests) covers selection resolution and the
+  grouping covering every rendered verb exactly once across the eight tabs.
+* **Defect R7 (US 55) — the interrupt harness could never deliver its signal on
+  Windows.** `process.kill(-child.pid, 'SIGBREAK')` fails on Windows for two
+  independent reasons: Node has no negative-pid (process-group) semantics
+  (ESRCH even against a live child), and `detached: true` is `DETACHED_PROCESS`
+  (no console), not `CREATE_NEW_PROCESS_GROUP` as the code comment claimed. The
+  ConPTY limitation measured in session 3 stands, but the documented
+  "re-run on a real console to convert the SKIP into a PASS" path could never
+  have worked. Details: §8 US 55 and `bugs-fixing.md` §3.7; probe scripts in
+  `tests/.build/us55-*.mjs`. **The harness rework is designed, not applied** —
+  ticket-03 test-infra work, see §9.
+* **Davood re-ran `tests\rust-ticket03-interrupt.mjs` from a normal window this
+  session**: same SKIP, same `ESRCH kill ESRCH` cause — expected, because the
+  harness's own signal call is what fails, before any console is involved.
+* Suites this session: cargo **24 passed** · `npm test` **63 passed** (7 files) ·
+  `svelte-check` **0 errors, 0 warnings** · `build.ps1` **exit 0** (four
+  phases) · shipped-text **202 files PASS** · ticket08 **19/19** ·
+  ticket01-CLI, ticket02-probe, US 55 CLI cases green ·
+  ticket05-06-07: the single pre-existing FAIL (`alt+ctrl+shift+r` vs the other
+  session's uncommitted `config/whkdrc` + `scripts/safe-restart.ps1` work) is
+  still theirs and still untouched.
+* **Unrelated dirty entries are untouched** (see §10): the other session's
+  `config/`, `scripts/`, `docs/Access-Denied-Solving/` work, the two merged
+  `docs/HANDOFF-*` deletions, and `tests/uia-dump.ps1`. Commits use explicit
+  pathspecs so none of it is carried.
+
+### 0.4 Session history (compressed, sessions 2–5)
 
 * **Session 2 (2026-10-08) — ticket 01.** The Rust + Tauri shell builds and the
   first suites land; artefact `releases/rust/KomorebiDashboard.exe`
@@ -238,16 +282,17 @@ shipped text.
 | `01-scaffold-first-verb` | **done**, committed, pushed | commits `b6b0a2f`, `d8d9906`, `c23ea8c` |
 | `02-execution-contract` | **done**, verified | stop path, cancel-by-run-id, tree kill, timeouts; probe has dual-mode thresholds (ADR-0019) |
 | `03-registry-cli-twin` | **done**, verified, committed `d64ec0c` | registry of 35 verbs + CLI twin + US 55 wired; see §8 for the one unprovable item |
-| **`04-eight-tabs`** | **next** | the real eight-tab strip; §9 tells you what is already in place |
-| 05–13 | not started | 05 (elevation) is the first one with a live parity gap — see §8 |
+| `04-eight-tabs` | **done**, verified, pushed | the real eight-tab strip + tab-selection state; runtime evidence `evidence/ticket04-eight-tabs-uia.md` (12/12 UIA) |
+| 05–13 | not started | **05 (elevation) is next** — the first one with a live parity gap; §9 |
 
-Artefact: `releases/rust/KomorebiDashboard.exe` — **13,852,672 bytes**, debug profile.
-The WPF `releases/KomorebiDashboard.exe` (170,176,020 bytes) was never touched.
+Artefact: `releases/rust/KomorebiDashboard.exe` — **6,450,176 bytes**, release
+profile (rebuilt 2026-10-10, session 7, sha256 `8ea3c3d1fe18ee4f…`). The WPF
+`releases/KomorebiDashboard.exe` (170,176,020 bytes) was never touched.
 
 **Implementation phase status:**
 - Phase 1 — Specification (`spec.md`, ADR-0017) — ✅ done 2026-10-08
 - Phase 2 — Tickets (`tickets/`) — ✅ done 2026-10-08 (13 tickets)
-- Phase 3 — Implementation by coding agent — ⏳ **in progress** (tickets 01–03 done)
+- Phase 3 — Implementation by coding agent — ⏳ **in progress** (tickets 01–04 done)
 
 ---
 
@@ -466,16 +511,24 @@ Four spawn topologies were probed with a child that installs a real
 So `tests/rust-ticket03-interrupt.mjs` reports `SKIP` with the measured error and
 exits 0; it exits 1 only on a real FAIL.
 
-**To convert the SKIP into a PASS:** run the harness from a real interactive console
-(a normal PowerShell window, not an agent/PTY session):
-
-```powershell
-cd H:\Repo\komorebi-1click
-node tests\rust-ticket03-interrupt.mjs
-```
-
-If it still SKIPs there, that is a real finding about the code, not the host —
-investigate. **Do not weaken the case to make it pass.**
+**Defect R7 (session 7): the harness could never deliver the signal on any host,
+so the "re-run on a real console" path could not have worked.** Case 1 kills
+with `process.kill(-child.pid, 'SIGBREAK')`, and the two POSIX facts it assumes
+are false on Windows: Node's `process.kill` has no negative-pid
+(process-group) semantics — it throws ESRCH even against a live child — and
+`detached: true` maps to `DETACHED_PROCESS` (no console at all), not
+`CREATE_NEW_PROCESS_GROUP` as the code comment claimed, and a process without a
+console cannot receive console control events. Measured 2026-10-10 against a
+live, correctly spawned child: `+pid, 0` OK · `-pid, 0` ESRCH · `-pid,
+SIGBREAK` ESRCH · `+pid, SIGBREAK` ENOSYS. The ConPTY measurement above stays
+independently true: on a real console, a corrected delivery —
+`GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, groupId)` against a
+`CREATE_NEW_PROCESS_GROUP` child sharing the caller's console — should deliver
+the event. That harness rework (PowerShell P/Invoke + a host gate behind
+`GetConsoleWindow()`) is ticket-03 test-infra work and is **not yet applied**;
+probe scripts live in `tests/.build/us55-*.mjs`. **When a harness's own signal
+call throws ESRCH against a live child, the harness is broken, not the
+platform — measure the mechanism before re-diagnosing the host.**
 
 ### Gaps carried forward
 
@@ -484,10 +537,11 @@ investigate. **Do not weaken the case to make it pass.**
   refusing. The WPF build gated here (`ElevationService.CanRun` before launch, loud
   refusal, dedicated exit code), so this is a **live parity gap** — ticket 05 owns
   it. It is recorded here rather than hidden.
-* **Only one tab renders.** Until ticket 04 lands, the shell draws
-  `CURRENT_TAB = 'Debugging'` and that tab's own rows. This is deliberate: the
-  tracer's placeholder returned the whole table, which was exact with two verbs and
-  wrong with 35.
+* **Customization and About render their empty row state.** Ticket 04 proved the
+  grouping and the strip; the two hand-built surfaces themselves (theme controls,
+  product identity) are roadmap R09/R10 work and tick when they land. The tabs
+  exist, are selectable, and render honestly as empty rather than as a broken
+  grouping.
 * **Everything is committed now.** Session 5 landed the ticket-03 work
   (`5df6f6d`, `d64ec0c`), its own installer-track fixes (`beec3f2`), and this
   handoff update in the commit that carries it — all on `main`, unpushed. The
@@ -496,39 +550,49 @@ investigate. **Do not weaken the case to make it pass.**
 
 ---
 
-## 9. The exact point to resume from — ticket `04-eight-tabs`
+## 9. The exact point to resume from — ticket `05-elevation`
 
-Start there. What it needs is already in place, so the work is the strip itself:
+Ticket 04 landed in session 7 (evidence:
+`docs/rust-translate/evidence/ticket04-eight-tabs-uia.md`, 12/12 UIA
+assertions), so the frontier is `05-elevation`. What it needs is already in
+place:
 
-1. `registry.rs` already exposes `TABS` (8 entries, ordered) and
-   `verbs_in_tab(id)` / `rows_in_tab(id)`, and `main.rs` already serves `list_tabs`
-   over IPC. The backend is ready; ticket 04 is a frontend task.
-2. In `src/lib/registry.svelte.ts`, replace the `CURRENT_TAB` constant with real
-   selected-tab state, and keep `rowsForTab` as the row source — the guard it
-   applies (`tab` **and** `renderInGui`) is what stops an admin verb appearing in a
-   read-only tab.
-3. `App.svelte` currently reads the heading from `registry.tabs.find(...)`; extend
-   that to render the strip. Customization and About carry **no** registry verbs and
-   must render as hand-built surfaces.
-4. Order is the registry's order, not alphabetical — `rowsForTab` preserves it, and
-   the frontend test `preserves the order the registry declares rather than sorting`
-   exists specifically because sorting would break the parity the rewrite preserves.
+1. **The live parity gap it closes** (§8): `requires_admin` is on every verb and
+   the frontend can dispatch any of them, but the CLI still runs an admin verb
+   without refusing. The WPF build refused before launch
+   (`ElevationService.CanRun`, dedicated exit code 740) — match that, per
+   ADR-0012.
+2. `registry.rs` carries `requires_admin` per verb (ticket 03), so the CLI gate
+   and the dialog's feature list are both **generated** from the table — the
+   dialog must never hard-code a feature list that can drift.
+3. The GUI side is the `Rerun as Administrator` dialog: exactly three actions
+   (OK, Rerun as Administrator, Cancel), then a relaunch elevated with the old
+   instance exiting (one window only), and declining UAC returns to a usable
+   unelevated window with no error state.
+4. **Do not** use process-access escalation for the token probe — ADR-0016; the
+   elevation probe lives in `wsl-isolation`/`godmode` skills and the repo's
+   ADR set.
+
+**Separate, not part of 05:** the US 55 harness rework (defect R7, §8) —
+`GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, groupId)` via PowerShell P/Invoke
+against a `CREATE_NEW_PROCESS_GROUP` child sharing the caller's console, behind
+a `GetConsoleWindow()` host gate. Ticket-03 test-infra work.
 
 **Before you start**, re-verify the baseline in §6.
 
 ---
 
-## 10. Files changed across the ticket-01→03 sessions
+## 10. Files changed across the ticket-01→04 sessions
 
 ```text
 MODIFIED
- src/KomorebiDashboardRust/src-tauri/src/lib.rs
- src/KomorebiDashboardRust/src-tauri/src/main.rs
- src/KomorebiDashboardRust/src-tauri/tests/dispatch.rs
- src/KomorebiDashboardRust/src/App.svelte
- src/KomorebiDashboardRust/src/lib/ipc.ts
- src/KomorebiDashboardRust/src/lib/registry.svelte.ts
- src/KomorebiDashboardRust/src/tests/rows.spec.ts
+ src/KkomorebiDashboardRust/src-tauri/src/lib.rs
+ src/KkomorebiDashboardRust/src-tauri/src/main.rs
+ src/KkomorebiDashboardRust/src-tauri/tests/dispatch.rs
+ src/KkomorebiDashboardRust/src/App.svelte
+ src/KkomorebiDashboardRust/src/lib/ipc.ts
+ src/KkomorebiDashboardRust/src/lib/registry.svelte.ts
+ src/KkomorebiDashboardRust/src/tests/rows.spec.ts
  docs/rust-translate/handoff.md
  docs/rust-translate/implement/handoff.md
  docs/rust-translate/implement/BUILD-CHECKLIST.md
@@ -539,9 +603,9 @@ MODIFIED
  tests/rust-ticket02-probe.ps1                     (dual-mode thresholds, ADR-0019)
 
 NEW
- src/KomorebiDashboardRust/src-tauri/src/registry.rs          (the 35-verb table)
- src/KomorebiDashboardRust/src-tauri/tests/registry.rs        (11 tests)
- src/KomorebiDashboardRust/src/tests/registry.spec.ts         (5 tests)
+ src/KkomorebiDashboardRust/src-tauri/src/registry.rs          (the 35-verb table)
+ src/KkomorebiDashboardRust/src-tauri/tests/registry.rs        (11 tests)
+ src/KkomorebiDashboardRust/src/tests/registry.spec.ts         (5 tests)
  tests/rust-ticket03-interrupt.mjs
  docs/rust-translate/spec/ADR-0018-stabilization-decisions.md
  docs/rust-translate/spec/ADR-0019-dual-mode-thresholds.md
@@ -550,6 +614,25 @@ NEW
  cheatsheets/en/komorebi-hotkeys.md
  cheatsheets/fa/komorebi-description.md      (moved from cheatsheets/)
  cheatsheets/fa/komorebi-hotkeys.md          (refreshed from the dev tree)
+```
+
+**Ticket 04 (session 7, 2026-10-10):**
+
+```text
+MODIFIED
+ src/KkomorebiDashboardRust/src/App.svelte                       (strip + tab resolution + empty state)
+ src/KkomorebiDashboardRust/src/lib/registry.svelte.ts        (tabSelection + resolveActiveTab)
+ src/KkomorebiDashboardRust/src/lib/format.ts                 (filterNumericValue)
+ src/KkomorebiDashboardRust/src/components/VerbRow.svelte      (numeric filter via format.ts)
+ src/KkomorebiDashboardRust/src/tests/format.spec.ts          (+4 filterNumericValue tests)
+ docs/rust-translate/tickets/04-eight-tabs.md                 (status → done, evidence)
+ docs/rust-translate/handoff.md
+ docs/rust-translate/bugs-fixing.md                           (defect R7)
+ docs/rust-translate/knowledges.md                            (UIA TabItem seam; R7 lesson)
+
+NEW
+ src/KkomorebiDashboardRust/src/tests/tabs.spec.ts            (10 tests)
+ docs/rust-translate/evidence/ticket04-eight-tabs-uia.md     (12/12 UIA assertions)
 ```
 
 **Committed.** The body above landed in two focused commits — `5df6f6d` (the
@@ -639,7 +722,7 @@ Before writing any code:
 Then: re-verify the baseline (§6), and only then start the ticket.
 
 **One handoff document.** This file is the only continuation document.
-`handoff-last-session.md` and `implement/handoff.md` were merged into §0.3 and
+`handoff-last-session.md` and `implement/handoff.md` were merged into §0.4 and
 removed in session 6 at Davood's instruction; `implement/BUILD-CHECKLIST.md`
 remains as the build and verification contract, not as a handoff. Update this
 document alone when a session ends, and never leave a second entry log behind.
