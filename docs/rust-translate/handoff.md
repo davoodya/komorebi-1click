@@ -34,10 +34,16 @@ gate did not exist; both now exist as one pure gate in the core
 by the window's dialog and the CLI, plus `relaunch_elevated` (ShellExecuteW
 "runas" + exit), an admin badge per row, a "Not elevated" chip, and the
 theme lib/store/toggle (npm 78/78;
-`tests/ticket12-rust-elevation.tests.ps1` 25/25). The Rust EXE in
-`releases/rust/` is now STALE (it predates these features) — its rebuild is
-left to the publish ticket (13). The next installer ticket is
-**`13-dashboard-publish`**.
+`tests/ticket12-rust-elevation.tests.ps1` 28/28). Session 11 then **published**
+the rebuilt EXE (ticket 13): `cargo tauri build --no-bundle -- --locked` →
+`releases/rust/Komorb…Dashboard.exe`, 6,457,344 bytes, SHA256
+`ba686594…3476`, CLI startup ~73 ms; the ticket-12 gate proven **through the
+shipped binary** (unelevated `kill-all` → exit 740, features named, stdout
+empty). Sandbox suite §T13 blesses the artifact (parser-verified; the Sandbox
+run itself is Davood's). Ticket 14's standing deliverable is
+`docs/rust-translate/tests-reminded.md` — the manual/automatic test split.
+The installer ticket list is exhausted through 14; the next work is the
+dashboard work in the Rust translate spec.
 Another session is concurrently editing `config/`, `scripts/Install-Common.ps1`,
 `scripts/safe-restart.ps1`, `tests/uia-dump.ps1` and
 `docs/Access-Denied-Solving/` — do not touch those paths.
@@ -417,6 +423,64 @@ therefore parked with that document.
 * **Not done (boundary, unchanged):** rendered UX — a real click on an admin
   verb unelevated, the dialog on screen, a declined UAC — is a Sandbox item
   (ticket 14); the Rust EXE has NOT been rebuilt in the releases folder yet.
+
+### 0.8c Session 11 continued (2026-10-10) — installer tickets 13 & 14 on the Rust track
+
+* **Ticket 13 (publish) — DONE, and the rebuild happened HERE** (Davood's answer
+  to the session-11 question 1: rebuild in 13; the final build after the last
+  ticket is the main target). `cargo tauri build --no-bundle -- --locked` →
+  `releases/rust/KomorebiDashboard.exe`: **6,457,344 bytes**, SHA256
+  `ba6865947684c65d952e8c01a7f8b781b9c1bf15042e8b92cc3201db90473476`, CLI
+  startup **~73 ms**. The release profile is the deliberate size play
+  (`strip`/`lto=true`, `codegen-units=1`, `opt-level="s"`). **The ticket-12 gate
+  was proven through this exact shipped binary**: unelevated `kill-all` →
+  exit **740**, stderr names the ten admin features generated from the
+  registry, stdout 0 bytes — nothing launched. Tracker: dev-tree issue 13.
+* **Ticket 14 (harness) — the Rust-relevant parts DONE.** The standing
+  deliverable is **`docs/rust-translate/tests-reminded.md`**: the automatic set
+  (cargo/npm/tsc/static suites/shipped-artifact probes/`verify-readonly.ps1`)
+  vs Davood's manual set (window launch, theme-switch click, dialog buttons,
+  UAC accept/decline, chatty no-freeze watch). `tests/sandbox-test-suite.ps1`
+  gained **§T13** (published EXE: existence/size/SHA — pins read from
+  `tests/rust-release-pins.json`, the EXE itself is deliberately untracked per
+  `.gitignore` — `--help` with no dotnet on PATH/the 740 gate) — parser-verified
+  here; the Sandbox run itself is Davood's or the harness's, never this machine.
+* **Two-axis review of the session's diff** (Standards + Spec, parallel
+  sub-agents per the `implement` skill) — both verdicts pass-with-findings;
+  every hard finding was fixed before commit: the tests-reminded assertion
+  counts were stale (rewritten to real suite names + real run numbers), §T13's
+  pins inlined in five places were consolidated into
+  `tests/rust-release-pins.json`, §T13 was moved before the `# Result` banner
+  with a hard fail on a missing artifact, and TESTING.md's ticket-13 row now
+  says "parser-verified, the Sandbox run is Davood's" instead of overstating it.
+  The one genuine scope note (the t12-theme-elevation fix) was accepted and is
+  recorded above as a real repair, not ticket creep.
+* **One real fix:** `tests/ticket12-theme-elevation.tests.ps1` aborted with
+  `NativeCommandError` because `& $exe … 2>&1` under
+  `$ErrorActionPreference='Stop'` treats the GUI EXE's **stderr-on-success**
+  as fatal. All three EXE probes now run through `Start-Process
+  -RedirectStandardOutput/-RedirectStandardError` (the recipe the Rust and
+  Sandbox suites already use). Suite: 48/48. (A parameter named `$Args` cannot
+  be added to such a helper — `$Args` is PowerShell's automatic variable.)
+* **Operational lesson recorded in knowledges.md:** Windows PowerShell 5.1
+  through `win-exec.sh` does not autoload the Utility module, so
+  `Get-FileHash` — and therefore `tests/verify-readonly.ps1` — must be run
+  under **pwsh (7)**. Run that way, the gate reports 32 PASS / **4 FAIL**, all
+  in the concurrent session's lane (`safe-restart.ps1:487` source-machine
+  path, the `app_specific_configuration_path` detail, the `releases/` root
+  payload count from the WPF publish, the R09 registry-name extractor
+  matching a test label). Recorded here so the next agent does not chase them
+  as Rust regressions.
+* **Concurrent-session note:** while this session ran the Rust track, the other
+  session added `tests/ticket09-exe-wrapper`, `ticket10-dashboard-shell`,
+  `ticket10-registry-parity`, `ticket11-threading`, `ticket13-publish`,
+  `ticket13-runtime`, `ticket15-shell-resources`, `ticket-monitor` and
+  `tests/verify-readonly.ps1` suites (WPF/installer lane — do not touch
+  `config/`, `scripts/safe-restart.ps1`, `scripts/Install-Common.ps1`,
+  `tests/uia-dump.ps1`, `docs/Access-Denied-Solving/`).
+* **Answers applied (Davood, 2026-10-10):** the rebuild happens in ticket 13;
+  the wpf-exemption §3 items are to be implemented **properly/standardly**
+  (not ad hoc) when the WPF track resumes.
 
 ### 0.9 Session history (compressed, sessions 2–7)
 

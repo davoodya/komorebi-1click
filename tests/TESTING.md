@@ -160,7 +160,9 @@ must run in the Sandbox.
 | 07 — export / import (directory selectors) | done | T07.1–T07.4 static PASS (91 assertions) + a full export→mutate→import round trip verified in a sandbox profile |
 | 09 — EXE wrapper + irm install path | done | 40 wrapper assertions (compile + execute against a stub) + 7 irm-E2E assertions, exit 0 on the dev machine |
 | 11 — dashboard threading | done | WPF suite 67 assertions green; **Rust audit (2026-10-10, session 11): no gap** — cargo 30/30 (9 execution-contract assertions), npm 78/78 |
-| 12 — dashboard theming + elevation | done | WPF suite green; **Rust twin implemented (session 11)** — theme.spec.ts 7/7 + elevation.spec.ts 8/8 (vitest), cargo tests/elevation.rs 6/6, `tests/ticket12-rust-elevation.tests.ps1` 25/25 static |
+| 12 — dashboard theming + elevation | done | WPF suite green (48 assertions after the GUI-subsystem stderr fix); **Rust twin implemented (session 11)** — theme.spec.ts 7/7 + elevation.spec.ts 8/8 (vitest), cargo tests/elevation.rs 6/6, `tests/ticket12-rust-elevation.tests.ps1` 28/28 static |
+| 13 — dashboard publish | done (Rust track) | `cargo tauri build --no-bundle -- --locked` → `releases/rust/` (6,457,344 B, SHA256 `ba686594…3476`, ~73 ms CLI; pins in `tests/rust-release-pins.json`, the EXE itself deliberately untracked per `.gitignore`); the ticket-12 gate proven through the shipped EXE (unelevated admin verb → 740, features named, nothing launched); Sandbox suite §T13 added — parser-verified here, the Sandbox run itself is Davood's |
+| 14 — verification harness | done (Rust-relevant parts) | `docs/rust-translate/tests-reminded.md` — the manual/automatic split; Sandbox suite §T13 added; `verify-readonly.ps1` remains the only gate allowed on the production machine |
 
 **Ticket 10 — dashboard shell (`tests/ticket10-dashboard-shell.tests.ps1`, deep-audited 2026-10-10):**
 155 assertions green (includes a real `dotnet build` of the WPF shell; the XAML
@@ -274,3 +276,19 @@ Two real bugs were found and fixed by exactly this test before any code was comm
    their real home.
 2. `CreateEntryFromFile` is an *extension* method, so it has to be called through
    `[System.IO.Compression.ZipFileExtensions]`, not on the `ZipArchive` object itself.
+
+---
+
+## Who runs what (2026-10-10, session 11)
+
+The standing split lives in **`docs/rust-translate/tests-reminded.md`**: the **automatic** set
+(cargo 30/30, npm 78/78, tsc, the static suites, the shipped-artifact gate probes,
+`verify-readonly.ps1`) changes nothing on the live stack; the **manual** set (window launch, theme
+toggle click, the elevation dialog's buttons, UAC accept/decline, the chatty no-freeze watch) is
+Davood's, and the install/uninstall/restart passes run only inside Windows Sandbox
+(`tests/sandbox-test-suite.ps1`, §T01–T13).
+
+Operational note for the agent running these from WSL: `verify-readonly.ps1` and anything else
+calling `Get-FileHash` must run under **pwsh (7)** — Windows PowerShell 5.1 through
+`win-exec.sh` does not autoload the Utility module in this /init context, and the suite would fail
+with a misleading `CommandNotFoundException`.

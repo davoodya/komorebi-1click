@@ -97,7 +97,7 @@ Atomic, sequential, each with acceptance criteria + verification method. Propose
 | R08 | Verb rows: registry-driven rendering, per-row value, numeric filter, read-only badge, Run/Cancel/Clear | R02, R07 |
 | R09 | Tab-specific: Settings slices + Factory Reset, Customization preview/apply, AHK serial apply, About | R05, R08 |
 | R10 | Theme/accent/fonts: 8 palettes + custom hex, dark/light, typography, UI scale, console font | R07 |
-| R11 | Publish: release profile, icons, NSIS/MSIS + portable exe, size/startup measured | R01 |
+| R11 | Publish: release profile, icons, NSIS/MSIS + portable exe, size/startup measured | R01 | ✅ portable EXE done 2026-10-10 (cargo tauri build → releases/rust, 6.46 MB, ~73 ms CLI, SHA recorded); NSIS/MSI remain installer-side |
 | R12 | Verification harness: regression suite translated from `tests/ticket10–13` | all |
 
 ### Phase 3 — Implementation by the coding agent

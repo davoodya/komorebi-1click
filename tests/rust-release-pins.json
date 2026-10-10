@@ -1,0 +1,15 @@
+{
+  "comment": "Release pins for the published Rust dashboard EXE (installer ticket 13). The EXE itself is deliberately untracked (see .gitignore: releases/rust/* is a build artifact rebuilt by `cargo tauri build`), so its identity lives here instead. tests/sandbox-test-suite.ps1 §T13 reads this file — after a rebuild, update the size/hash here and nowhere else.",
+  "exe": "KomorebiDashboard.exe",
+  "dir": "releases/rust",
+  "sizeBytes": 6457344,
+  "sha256": "ba6865947684c65d952e8c01a7f8b781b9c1bf15042e8b92cc3201db90473476",
+  "builtAt": "2026-10-10T23:32",
+  "releaseProfile": {
+    "strip": true,
+    "lto": true,
+    "codegenUnits": 1,
+    "optLevel": "s"
+  },
+  "cliStartupMs": 73
+}

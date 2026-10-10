@@ -86,3 +86,15 @@ order:
   in the same ticket if/when the WPF build is touched.
 - The Rust EXE's `-BackupPath` advertisement (session 9) has no WPF counterpart
   need; WPF uses its own backup flow.
+
+---
+
+## Davood's decision on the §3 items (2026-10-10, session 11)
+
+When the WPF track resumes, the §3 strengths above (per-row admin badge,
+"Not elevated" chip, exact exit 740, the one-gate contract, theme persistence)
+are to be implemented **properly and standardly** — as real features with their
+own suites, not as an ad-hoc port. In particular the badge/chip must come from
+the same registry-flag source the Rust twin uses (a second hand-rolled list is
+how the two builds drifted in the first place), and the exit code must be the
+shared contract (740), not the WPF-era value.

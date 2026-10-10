@@ -357,7 +357,55 @@ $afterRunKey = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersio
 Assert 'YASB autostart setting unchanged by re-run' ($beforeRunKey -eq $afterRunKey)
 
 # =============================================================================
+# Ticket 13 — the published Rust dashboard EXE (rebuilt 2026-10-10, session 11)
+# =============================================================================
+Section 'T13.1 — the published EXE exists beside the repo'
+
+# The installer does not carry the dashboard yet (roadmap M3), so the published
+# artifact under releases/rust/ is the thing this section blesses. Its identity
+# (size + SHA256) is pinned in ONE place — tests/rust-release-pins.json — so a
+# rebuild updates one file, never this suite.
+$pins = Get-Content (Join-Path $Repo 'tests\rust-release-pins.json') -Raw | ConvertFrom-Json
+$dashExe = Get-ChildItem (Join-Path $Repo $pins.dir) -Filter $pins.exe -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+Assert 'a dashboard EXE is published under releases\rust' ([bool]$dashExe)
+if (-not $dashExe) {
+    # A missing artefact must FAIL the run, not silently skip the probes below.
+    Assert 'the published EXE exists (the probes below cannot run without it)' $false
+} else {
+    Assert ('published size matches the pin ({0} bytes)' -f $pins.sizeBytes) ($dashExe.Length -eq $pins.sizeBytes)
+    $sha = (Get-FileHash -Algorithm SHA256 $dashExe.FullName).Hash.ToLower()
+    Assert 'published SHA256 matches the pin' ($sha -eq ([string]$pins.sha256).ToLowerInvariant())
+    Write-Output ("  dashboard: {0} ({1} bytes)" -f $dashExe.FullName, $dashExe.Length)
+
+    Section 'T13.2 — it runs with no .NET runtime on PATH'
+
+    # A Rust binary needs no managed runtime; this proves the Sandbox — which
+    # mirrors a clean machine — has no dotnet to lean on, and that the EXE still
+    # answers with that PATH.
+    Assert 'no dotnet runtime exists in this Sandbox PATH' (-not (Get-Command dotnet -ErrorAction SilentlyContinue))
+    $out = Join-Path $env:TEMP 'd13-help.out'; $err = Join-Path $env:TEMP 'd13-help.err'
+    $p = Start-Process -FilePath $dashExe.FullName -ArgumentList '--help' -PassThru -Wait `
+        -RedirectStandardOutput $out -RedirectStandardError $err -NoNewWindow
+    Assert '--help exits 0' ($p.ExitCode -eq 0)
+    Assert '--help lists the verbs' ((Get-Content $out -Raw) -match 'Usage: KomorebiDashboard')
+
+    Section 'T13.3 — the ticket 12 gate ships in this exact binary'
+
+    # The Sandbox account is not elevated: an admin verb must be REFUSED by the gate
+    # with exit 740 and must not launch anything. This is the end-to-end proof that
+    # the published artifact contains the elevation work.
+    $out2 = Join-Path $env:TEMP 'd13-gate.out'; $err2 = Join-Path $env:TEMP 'd13-gate.err'
+    $p2 = Start-Process -FilePath $dashExe.FullName -ArgumentList 'kill-all' -PassThru -Wait `
+        -RedirectStandardOutput $out2 -RedirectStandardError $err2 -NoNewWindow
+    Assert 'admin verb unelevated exits 740' ($p2.ExitCode -eq 740)
+    Assert 'the gate names the admin features' ((Get-Content $err2 -Raw) -match 'Kill All')
+    Assert 'nothing ran (stdout empty)' ((Get-Item $out2).Length -eq 0)
+}
+
+# =============================================================================
 # Result
+# =============================================================================
 # =============================================================================
 Section 'RESULT'
 Write-Output ("  assertions: {0}" -f $script:checks)

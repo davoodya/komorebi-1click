@@ -317,17 +317,33 @@ if ($built) {
     Assert 'EXE produced' (Test-Path $exe) $exe
 
     # --- no regression on the CLI twin ------------------------------------
-    $help = & $exe --help 2>&1 | Out-String
-    Assert '--help still works' ($LASTEXITCODE -eq 0 -and $help -match 'Verbs:')
+    # A GUI-subsystem EXE writes its structured summary to stderr even on
+    # success, and `& $exe ... 2>&1` under $ErrorActionPreference='Stop'
+    # turns that stderr into a terminating NativeCommandError. Run every
+    # probe through redirect files instead (the same recipe the Rust and
+    # Sandbox suites use) so stderr output can never abort the suite.
+    function Invoke-Dashboard([string] $VerbArgs) {
+        $o = Join-Path $env:TEMP 't12-dash.out'; $e = Join-Path $env:TEMP 't12-dash.err'
+        $p = Start-Process -FilePath $exe -ArgumentList $VerbArgs -PassThru -Wait `
+            -RedirectStandardOutput $o -RedirectStandardError $e -NoNewWindow
+        [pscustomobject] @{
+            Rc  = $p.ExitCode
+            Out = (Get-Content $o -Raw -ErrorAction SilentlyContinue)
+            Err = (Get-Content $e -Raw -ErrorAction SilentlyContinue)
+        }
+    }
+
+    $h = Invoke-Dashboard '--help'
+    Assert '--help still works' ($h.Rc -eq 0 -and $h.Out -match 'Verbs:')
 
     # --- a READ-ONLY verb must still run unelevated ----------------------
     # status is the safest probe: it only reads. If elevation gating were
     # applied too broadly it would refuse here.
-    $statusOut = & $exe status 2>&1 | Out-String
-    $statusRc = $LASTEXITCODE
+    $status = Invoke-Dashboard 'status'
+    $statusOut = ($status.Out + $status.Err)
     Assert 'a non-admin verb is not blocked by the elevation gate' `
-           ($statusRc -eq 0 -or $statusRc -eq 1) `
-           "status rc=$statusRc; tail: $(($statusOut -split "`n" | Select-Object -Last 2) -join ' / ')"
+           ($status.Rc -eq 0 -or $status.Rc -eq 1) `
+           "status rc=$($status.Rc); tail: $(($statusOut -split "`n" | Select-Object -Last 2) -join ' / ')"
     Assert 'a non-admin verb is not told to elevate' `
            ($statusOut -notmatch 'Rerun as Administrator|requires Administrator|elevated')
 
@@ -335,8 +351,9 @@ if ($built) {
     # 'uninstall' is RequiresAdmin in the registry and is destructive, so this
     # probe must NEVER get past the gate. If the app is already elevated on the
     # test machine the assertion is skipped rather than faked — reported below.
-    $uninstallOut = & $exe uninstall all 2>&1 | Out-String
-    $uninstallRc = $LASTEXITCODE
+    $uninstall = Invoke-Dashboard 'uninstall all'
+    $uninstallOut = ($uninstall.Out + $uninstall.Err)
+    $uninstallRc = $uninstall.Rc
     Write-Host "        (uninstall probe rc=$uninstallRc)" -ForegroundColor DarkGray
 
     $amElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()

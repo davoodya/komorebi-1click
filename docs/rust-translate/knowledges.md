@@ -306,8 +306,8 @@ The Dashboard exposes **35** primary verbs organized into tabs:
   `GetTokenInformation(TokenElevation)` behind two `extern "system"`
   declarations — the same no-windows-crate pattern the console module uses);
   both the Tauri command and the CLI call the same `run()`, so the dialog's
-  feature list (`adminFeatureNames(registry.verbs)` in TypeScript) and the
-  CLI's exit-5 message (`admin_feature_labels()` in Rust) are generated from
+  feature list (`adminFeatures(registry.verbs)` in TypeScript) and the
+  CLI's exit-740 message (`admin_feature_labels()` in Rust) are generated from
   the SAME table and can never name different features.
 * **A dialog whose title and buttons are typed into the markup is a second
   contract.** The Rust dialog renders `ELEVATION_DIALOG_TITLE` /
@@ -322,3 +322,45 @@ The Dashboard exposes **35** primary verbs organized into tabs:
   unstyled); `applyAppearance` sets `data-theme`/`data-accent` (the exact
   selectors the CSS declares) plus `color-scheme` for native controls. The
   WPF build's ThemeService was never the gap; the runtime switch was.
+* **`win-exec.sh pwsh '<inline>'` wraps the script in `-Command "$2"` — so
+  the inline script may contain single-quoted strings but never bare double
+  quotes (the inner `"` closes the wrapper's quote and mangles the command),
+  and never doubled single quotes `''` (an empty-string artifact that breaks
+  the statement it stands in). The bash-safe spelling for a single-quoted
+  string inside the argument is `'"'"'`. Bare paths need no quotes at all.
+* **Never hand-type this repo's directory names.** `Komorb…`-style crate
+  names have burned dozens of commands with one forgotten character
+  (Set-Location silently failing, a fallback dir, "Exec format error"-ish
+  confusion). Resolve them from an object instead — `(Get-ChildItem
+  H:\Repo\komorebi-1click\src -Directory | Where-Object { $_.Name -like
+  "*Rust*" }).FullName` — or glob them in Python and print, never transcribe.
+* **A windows-subsystem EXE gives PowerShell nothing when called as
+  `& $exe args`** — no stdout shape, no `$LASTEXITCODE` (both came back empty
+  and looked like a broken build). The working recipe is `Start-Process
+  -Wait -RedirectStandardOutput file -RedirectStandardError file` + the
+  `-PassThru` process object's ExitCode; that is also how the sandbox suite
+  drives the published EXE. This is how the ticket-12 gate was proven through
+  the real shipped binary (exit 740 + the feature list on stderr + a
+  0-byte stdout).
+* **`cargo tauri build` reports `Built application at: <package-name>.exe`
+  while the actual artifact on disk is the Cargo `[[bin]]` name** — trust
+  `Get-ChildItem target\release -Filter *.exe`, and when copying into
+  `releases/`, copy by the destination's own `$oldFile.Name` object, not a
+  typed path (the typed copy produced a second, differently-spelled file).
+* **`tests/sandbox-test-suite.ps1` RUNS THE INSTALLER.** On the production
+  reference machine it may only be parser-checked (ParseFile via a temp
+  .ps1 invoked with -Command), never executed; the live run is the Sandbox's
+  job, launched from `tests/sandbox-test-harness.ps1`.
+* **`releases/rust/*` is DELIBERATELY untracked** (`.gitignore`: only
+  `.gitkeep`; the last commit touching it, d8d9906, "drop a dead asset"). A
+  rebuilt dashboard EXE lives on disk and its identity lives in
+  `tests/rust-release-pins.json` — do not `git add` the EXE and do not write
+  its size/hash into suites or docs inline: the Sandbox §T13 reads the pins
+  file, the docs cite it, and one rebuild edits one file.
+* **A `Result` banner is a section boundary, not a bookmark.** Appending a new
+  ticket block before `Section 'RESULT'` still leaves it AFTER the
+  `# ====...\n# Result\n# ====...` banner comment — insert before the banner
+  itself, and parser-check (`ParseFile`) the suite before claiming a section.
+* **`if ($artifact) { ...probes... }` is a silent skip waiting to happen.**
+  A missing build artifact must cost the run an assertion in the OPEN (fail),
+  not quietly turn the probes into "unreported".
