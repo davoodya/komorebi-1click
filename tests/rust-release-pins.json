@@ -2,14 +2,26 @@
   "comment": "Release pins for the published Rust dashboard EXE (installer ticket 13). The EXE itself is deliberately untracked (see .gitignore: releases/rust/* is a build artifact rebuilt by `cargo tauri build`), so its identity lives here instead. tests/sandbox-test-suite.ps1 §T13 reads this file — after a rebuild, update the size/hash here and nowhere else.",
   "exe": "KomorebiDashboard.exe",
   "dir": "releases/rust",
-  "sizeBytes": 6457344,
-  "sha256": "ba6865947684c65d952e8c01a7f8b781b9c1bf15042e8b92cc3201db90473476",
-  "builtAt": "2026-10-10T23:32",
+  "sizeBytes": 6642176,
+  "sha256": "c0d0ea05cb322ad75d3ddc6f7821a2e9256e32f5cd52c20d7aaf2bbf47469517",
+  "builtAt": "2026-10-10T23:48",
   "releaseProfile": {
     "strip": true,
     "lto": true,
     "codegenUnits": 1,
     "optLevel": "s"
   },
-  "cliStartupMs": 73
+  "cliStartupMs": 73,
+  "measurements": {
+    "comment": "Ticket 12. Measured by tests/rust-release-measure.ps1 on the build host.",
+    "runtimeUpMs": 544,
+    "workingSetMB": 29.5,
+    "sizeMB": 6.33,
+    "baselineWindowReadyMsWpf": 553,
+    "targets": {
+      "sizeMB": 18,
+      "ramMB": 45
+    },
+    "note": "runtimeUp = first WebView2 child process (runtime up), measured from a non-interactive context; window-ready latency is measured on the desktop by hand."
+  }
 }

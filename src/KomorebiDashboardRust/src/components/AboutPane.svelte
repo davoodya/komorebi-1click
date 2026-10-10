@@ -15,12 +15,18 @@
 
   let info = $state<AppInfo | null>(null);
   let copyState = $state('');
+  let logo = $state('');
 
   onMount(() => {
     // The shell already fetched app_info; reusing its answers is free and
     // keeps ONE measurement of the running process.
     void appInfo()
-      .then((value) => (info = value))
+      .then((value) => {
+        info = value;
+        // The About image is a data URL extracted from the project's logo.ico
+        // at build time — it travels with the binary, wherever it lives.
+        logo = value.logoDataUrl ?? '';
+      })
       .catch(() => (info = null));
   });
 
@@ -57,10 +63,16 @@
 
 <section class="about-pane" data-testid="about-pane">
   <div class="about-identity">
-    <h2 class="about-title">{info?.product ?? PRODUCT_NAME}</h2>
-    <p class="about-author">{AUTHOR}</p>
+    {#if logo}
+      <!-- The same logo.ico the executable embeds — its 48x48 entry. -->
+      <img class="about-logo" data-testid="about-logo" src={logo} alt="" width="48" height="48" />
+    {/if}
+    <div class="about-heading">
+      <h2 class="about-title">{info?.product ?? PRODUCT_NAME}</h2>
+    <p class="about-author">Built by <a href="#" onclick={() => void open('author')}>{AUTHOR}</a></p>
     <p class="about-version" data-testid="about-version">{versionLine(info)}</p>
-    <p class="about-runtime" data-testid="about-runtime">{runtime}</p>
+      <p class="about-runtime" data-testid="about-runtime">{runtime}</p>
+    </div>
   </div>
 
   <p class="about-summary">{SUMMARY}</p>
@@ -120,6 +132,22 @@
     flex-direction: column;
     gap: 12px;
     max-inline-size: 720px;
+  }
+
+  .about-identity {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .about-heading {
+    min-inline-size: 0;
+  }
+
+  .about-logo {
+    flex: none;
+    inline-size: 48px;
+    block-size: 48px;
   }
 
   .about-title {

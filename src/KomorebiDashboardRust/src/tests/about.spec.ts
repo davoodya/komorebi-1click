@@ -11,7 +11,8 @@ const info = (): AppInfo => ({
   settingsPath: 'C:\\Users\\me\\AppData\\Roaming\\KomorebiDashboard',
   elevated: true,
   exePath: 'C:\\repo\\KomorebiDashboard.exe',
-  runtimeDescription: 'Tauri 2 · windows'
+  runtimeDescription: 'Tauri 2 · windows',
+  logoDataUrl: 'data:image/png;base64,UE5H'
 });
 
 describe('the About tab', () => {

@@ -1,6 +1,8 @@
 [package]
 name = "komorebi-dashboard"
-version = "0.1.0"
+# Matches the WPF build's identity (1.0.0+<sha>): the About tab shows this
+# version beside the stamped Git SHA, the same pair the .NET twin reports.
+version = "1.0.0"
 edition = "2021"
 
 [lib]

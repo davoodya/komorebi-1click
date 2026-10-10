@@ -205,3 +205,26 @@ harness runs the installer and the CLI surface, and Davood clicks the window.
       executable, scripts and settings paths are real; Copy puts the product
       line on the clipboard; open-folder opens the right folder for each
       path; site and repository links open in the browser.
+
+
+## Session 15 — manual passes (ANGRY: runner = Davood only)
+
+**Ticket 12 — the deliverable** (executable `releases\rust\KomorebiDashboard.exe`):
+- [ ] Title bar and taskbar show the project icon; the HTML head's icon and the
+      About tab's image are the same logo (four places, one icon).
+- [ ] The About tab shows `1.0.0` and the Git SHA of this build.
+- [ ] Window-ready latency on the desktop (the 544 ms runtime-up number was
+      measured non-interactively; the visual window is faster and is yours to
+      measure) — record it beside the baseline.
+- [ ] A deliberate crash leaves `KomorebiDashboard-crash.log` beside the
+      executable naming the action underway (there is no crash button — the
+      hook is proven by the cargo suite; a live panic needs a real defect).
+- [ ] `releases\rust\` still holds exactly one EXE after any local rebuild.
+
+**Ticket 13 — the full pass** (the track is complete; this is the reminder):
+- [ ] All eight tabs render in the built executable and every verb dispatches.
+- [ ] 100 % and 125 % scale on the portrait monitor.
+- [ ] Clean machine: WebView2 present, first launch succeeds, settings written.
+- [ ] The elevation dialog matches ADR-0012 and the gate ordering holds.
+- [ ] `tests\ticket13-publish.tests.ps1`'s single failure is the installer
+      track's releases\ state — confirm it, do not fix it here.

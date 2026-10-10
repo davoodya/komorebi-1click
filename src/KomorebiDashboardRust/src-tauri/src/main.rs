@@ -19,6 +19,41 @@ impl Drop for BusyGuard<'_> {
         self.0.store(false, Ordering::Release);
     }
 }
+// The About tab's image: the 48x48 PNG extracted from the project's logo.ico
+// at build time (build.rs), embedded so the tab works from any executable
+// location. Base64 is hand-rolled — the crate list stays dependency-free.
+const ABOUT_LOGO_PNG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/about-logo.png"));
+
+/// Minimal base64 for data URLs. The standard alphabet, no padding surprises.
+fn base64_encode(data: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(ALPHABET[(n >> 18) as usize & 63] as char);
+        out.push(ALPHABET[(n >> 12) as usize & 63] as char);
+        if chunk.len() > 1 {
+            out.push(ALPHABET[(n >> 6) as usize & 63] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(ALPHABET[n as usize & 63] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
+
+/// The About image as a data URL the frontend can drop straight into an <img>.
+fn about_logo_data_url() -> String {
+    format!("data:image/png;base64,{}", base64_encode(ABOUT_LOGO_PNG))
+}
+
 #[tauri::command]
 fn list_verbs() -> &'static [Verb] {
     registry()
@@ -50,6 +85,8 @@ fn app_info(state: tauri::State<'_, AppState>) -> serde_json::Value {
         // administrative rows the same way the backend does — one registry
         // flags reading, one answer, no second probe.
         "elevated": dashboard_core::is_elevated(),
+        // Ticket 12: the About image, as a data URL — no runtime file to find.
+        "logoDataUrl": about_logo_data_url(),
         // Ticket 11: where the running executable lives (the one fact that
         // answers "which copy did I launch") and the runtime it runs on.
         "exePath": std::env::current_exe()
@@ -433,6 +470,9 @@ fn reveal_path(dir: &std::path::Path) -> Result<String, String> {
 }
 
 fn main() {
+    // Before anything can panic, a crash record must be able to name what was
+    // underway (ticket 12).
+    dashboard_core::crashlog::install();
     let executable = std::env::current_exe().expect("Cannot locate executable");
     let scripts = locate_scripts(&executable);
     let args: Vec<String> = std::env::args().skip(1).collect();

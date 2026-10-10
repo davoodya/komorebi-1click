@@ -1,4 +1,5 @@
 pub mod ahk;
+pub mod crashlog;
 pub mod fonts;
 pub mod registry;
 pub mod settings;
@@ -629,6 +630,22 @@ pub async fn execute<F: FnMut(OutputBatch)>(
     mut emit: F,
 ) -> Outcome {
     let started = Instant::now();
+    // A panic between here and the outcome is a crash DURING this action; the
+    // crash log must name it. The guard clears the record on the way out, so a
+    // later unrelated crash is never misattributed to this run.
+    struct ActionGuard(String);
+    impl Drop for ActionGuard {
+        fn drop(&mut self) {
+            crashlog::clear_action();
+        }
+    }
+    let action = format!(
+        "{} {}",
+        script.file_name().and_then(|n| n.to_str()).unwrap_or("<script>"),
+        verb.verb
+    );
+    crashlog::note_action(&action);
+    let _action_guard = ActionGuard(action);
     let mut command = Command::new(powershell());
     command
         .args([

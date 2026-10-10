@@ -67,6 +67,12 @@ export interface ScriptResult {
 
 export interface AppInfo {
   product: string;
+  /**
+   * Ticket 12: the About image — the 48x48 entry extracted from the project's
+   * logo.ico at build time and base64'd into a data URL, so the tab shows the
+   * real logo no matter where the executable was launched from.
+   */
+  logoDataUrl: string;
   version: string;
   gitSha: string;
   scriptsPath: string;
