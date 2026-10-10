@@ -28,10 +28,58 @@
 param(
     [string]$ExePath = (Join-Path $PSScriptRoot '..\releases\rust\KomorebiDashboard.exe'),
     [string]$EvidenceDir = (Join-Path $PSScriptRoot '..\test-results\rust-ticket02'),
-    [int]$ScanTimeoutSeconds = 30
+    [int]$ScanTimeoutSeconds = 30,
+    # Which tolerance set the timing assertions use. ADR-0018 section 3 / ADR-0019.
+    #   strict  = tight tolerances, for a release or clean-checkout run on an idle
+    #             machine. A failure here is a real finding.
+    #   relaxed = the same assertions with a margin, for local development on a
+    #             busy machine. Still meaningful, but does not fail on load.
+    # The mode is chosen explicitly so a pass can never be ambiguous: a relaxed
+    # pass is recorded as a relaxed pass, never as a strict one.
+    [ValidateSet('strict', 'relaxed')]
+    [string]$ThresholdMode = $env:DASHBOARD_THRESHOLD_MODE,
+    # An unset env var and an empty string both mean 'strict', which is the
+    # default that keeps an accidental relaxed run out of a release.
+    # A switch for the common case: -Strict is shorthand for -ThresholdMode strict.
+    [switch]$Strict,
+    [switch]$Relaxed
 )
 
 $ErrorActionPreference = 'Stop'
+
+if (-not $ThresholdMode) {
+    $ThresholdMode = if ($Relaxed) { 'relaxed' } else { 'strict' }
+}
+if ($Strict -and ($ThresholdMode -ne 'strict')) {
+    Write-Output "ERROR: -Strict conflicts with -ThresholdMode $ThresholdMode"
+    exit 3
+}
+if ($Strict)  { $ThresholdMode = 'strict' }
+if ($Relaxed) { $ThresholdMode = 'relaxed' }
+
+# --- Timing tolerances, by mode (ADR-0019: dual-mode thresholds) -------------
+# The measured values on an idle machine: timeout honoured at ~3.4 s for a 3 s
+# budget, worst inter-batch gap 65 ms, cancel lands at ~976 ms of a 30 s budget.
+# Under three concurrent builds the tightest assertions failed 3/26 and 1/11 and
+# re-ran clean on an idle machine, so a loaded machine is inconclusive at strict.
+switch ($ThresholdMode) {
+    'strict' {
+        # Tight, honest, and only trustworthy on an idle machine.
+        $MaxTimeoutMs   = 15000   # 3 s budget honoured, with scheduler slack
+        $MaxWorstGapMs  = 250     # 65 ms measured; 250 ms catches a real stall
+        $MaxBatchingMs  = 30000   # 1000 lines at 50 ms batching is ~5 s; 30 s catches a stall
+        $MinTimeoutMs   = 3000    # the budget is a floor too: it must not fire early
+    }
+    'relaxed' {
+        # The same assertions, with enough margin to absorb a loaded machine.
+        $MaxTimeoutMs   = 45000   # 3x the strict ceiling
+        $MaxWorstGapMs  = 900     # ~3.5x, above the worst observed under load
+        $MaxBatchingMs  = 90000   # 3x, for a machine busy with concurrent builds
+        $MinTimeoutMs   = 2900    # allow a small scheduling shortfall
+    }
+}
+Write-Output "threshold mode: $ThresholdMode (timeout ${MinTimeoutMs}-${MaxTimeoutMs} ms, worst gap < ${MaxWorstGapMs} ms)"
+Write-Output "hint: -Relaxed for a busy machine; strict is the default and the only mode a release may use."
 New-Item -ItemType Directory -Force -Path $EvidenceDir | Out-Null
 
 $checks = [System.Collections.Generic.List[object]]::new()
@@ -99,9 +147,13 @@ Assert-That 'the suite emitted probe measurements' ($probe.Count -ge 20) ("$($pr
 # --- 2. cancel: the recorded fact and the tree kill -------------------------
 Assert-That 'cancel is recorded as cancelled with code 130' ($probe['cancel.cancelled'] -eq $true -and $probe['cancel.exit_code'] -eq 130) (
     "cancelled=$($probe['cancel.cancelled']) exit=$($probe['cancel.exit_code'])")
+# A cancel must beat the budget by a wide margin. Strict uses half the budget,
+# relaxed uses a quarter, because on a loaded machine the cancel-to-kill path
+# itself takes longer and the ratio is what makes the assertion meaningful.
+$cancelBudgetRatio = if ($ThresholdMode -eq 'strict') { 2 } else { 4 }
 Assert-That 'cancel lands far inside the run budget, so it stops work rather than waiting it out' (
-    $probe['cancel.elapsed_ms'] -lt ($probe['cancel.budget_ms'] / 2)) (
-    "stopped after $($probe['cancel.elapsed_ms']) ms of a $($probe['cancel.budget_ms']) ms budget")
+    $probe['cancel.elapsed_ms'] -lt ($probe['cancel.budget_ms'] / $cancelBudgetRatio)) (
+    "stopped after $($probe['cancel.elapsed_ms']) ms of a $($probe['cancel.budget_ms']) ms budget (mode $ThresholdMode)")
 Assert-That 'a cancelled run does not complete its work' ($probe['cancel.completed_work'] -eq $false) 'the fixture reached its last line'
 Assert-That 'no process from a cancelled run survives the tree kill' ($probe['tree.survivors'] -eq 0) (
     "$($probe['tree.survivors']) survivors of $($probe['tree.pids_before_kill']) pids")
@@ -114,8 +166,8 @@ Assert-That 'a timeout reports 124 with a TIMED OUT verdict' (
     $probe['timeout.exit_code'] -eq 124 -and $probe['timeout.verdict'] -match 'TIMED OUT') (
     "exit=$($probe['timeout.exit_code']) verdict='$($probe['timeout.verdict'])'")
 Assert-That 'the timeout budget is honoured near 3 s' (
-    $probe['timeout.elapsed_ms'] -ge 3000 -and $probe['timeout.elapsed_ms'] -lt 15000) (
-    "elapsed $($probe['timeout.elapsed_ms']) ms for a 3000 ms budget")
+    $probe['timeout.elapsed_ms'] -ge $MinTimeoutMs -and $probe['timeout.elapsed_ms'] -lt $MaxTimeoutMs) (
+    "elapsed $($probe['timeout.elapsed_ms']) ms for a 3000 ms budget (mode $ThresholdMode)")
 Assert-That 'cancellation and timeout stay distinct facts' (
     $probe['cancel.cancelled'] -eq $true -and $probe['cancel.timed_out'] -eq $false -and
     $probe['timeout.timed_out'] -eq $true -and $probe['timeout.cancelled'] -eq $false) (
@@ -132,8 +184,8 @@ Assert-That 'no PowerShell is ever launched for a missing script' ($probe['missi
 Assert-That 'a high-line-count run is batched, not emitted per line' (
     $probe['batching.per_line_emit'] -eq $false -and $probe['batching.batches'] -lt 60) (
     "1000 lines arrived as $($probe['batching.batches']) batches")
-Assert-That 'output windows keep arriving while the run streams' ($probe['batching.worst_gap_ms'] -lt 250) (
-    "worst gap $($probe['batching.worst_gap_ms']) ms")
+Assert-That 'output windows keep arriving while the run streams' ($probe['batching.worst_gap_ms'] -lt $MaxWorstGapMs) (
+    "worst gap $($probe['batching.worst_gap_ms']) ms (mode $ThresholdMode)")
 
 # --- 6. shipped binary ----------------------------------------------------
 if (-not (Test-Path -LiteralPath $ExePath)) {
@@ -196,8 +248,8 @@ if (($exeRuns.Keys -contains 'timeout')) {
         $exeRuns['timeout'].summary -match 'TIMED OUT' -and $exeRuns['timeout'].summary -notmatch 'FAILED') (
         "'$($exeRuns['timeout'].summary)'")
     Assert-That 'the shipped binary stops near its 3 s budget' (
-        $exeRuns['timeout'].elapsed_ms -ge 3000 -and $exeRuns['timeout'].elapsed_ms -lt 15000) (
-        "$($exeRuns['timeout'].elapsed_ms) ms")
+        $exeRuns['timeout'].elapsed_ms -ge $MinTimeoutMs -and $exeRuns['timeout'].elapsed_ms -lt $MaxTimeoutMs) (
+        "$($exeRuns['timeout'].elapsed_ms) ms (mode $ThresholdMode)")
     Assert-That 'the shipped binary streams output before the stop' (
         $exeRuns['timeout'].lines_seen -gt 0) ("$($exeRuns['timeout'].lines_seen) lines before the stop")
 }
@@ -206,7 +258,7 @@ if (($exeRuns.Keys -contains 'batching')) {
     Assert-That 'the shipped binary streams all 1000 lines without dropping any' (
         $exeRuns['batching'].lines_seen -eq 1000) ("$($exeRuns['batching'].lines_seen) of 1000 lines seen")
     Assert-That 'the shipped binary batches rather than emitting per line' (
-        $exeRuns['batching'].elapsed_ms -lt 30000) ("$($exeRuns['batching'].elapsed_ms) ms for 1000 lines")
+        $exeRuns['batching'].elapsed_ms -lt $MaxBatchingMs) ("$($exeRuns['batching'].elapsed_ms) ms for 1000 lines (mode $ThresholdMode)")
 }
 
 if (($exeRuns.Keys -contains 'failure')) {
