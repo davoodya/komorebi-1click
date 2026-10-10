@@ -282,7 +282,37 @@ If your connection drops, this document alone is enough to continue.
 * Pitfalls recorded in `knowledges.md` §5: trailing-wildcard patterns for
   quoted script paths; never reuse a parameter name as a local.
 
-### 0.7 Session history (compressed, sessions 2–7)
+### 0.7 Ticket 09 deep audit (session 10, 2026-10-10)
+
+* The three entry points — the csc-built wrapper EXE, a direct `Install.ps1`,
+  and `irm ... | iex` — all converge on `Install.ps1` →
+  `scripts/Install-Common.ps1`; only the root resolution differs
+  (`$PSScriptRoot` vs. the bootstrap branch).
+* `tests/ticket09-exe-wrapper.tests.ps1`: **40 assertions green**. It compiles
+  the current wrapper source with `build-exe.ps1`'s csc flags and EXECUTES the
+  binary against a recording stub — the 2026-10-10 argument-order fix
+  (`-SkipElevationCheck` bound after the verb), exit-code forwarding (0/1/64),
+  the elevation decision, the UAC-message and content-locator laws, and the
+  GUI-subsystem assembly identity are all behaviour-tested, not grepped.
+* The shipped `komorebi-1click-install.exe` (untracked build artifact) was
+  REBUILT from the current source via `build-exe.ps1`: 9728 bytes, exit 0,
+  sha256 `076ECF78…785D0F`. Verify the source, not the artifact — csc output
+  is not reproducible byte-for-byte (MVID + PE timestamp), so "same size" and
+  "execution-tested" are the meaningful checks.
+* **New: `tests/ticket09-irm-e2e.tests.ps1` (7 assertions green)** — the first
+  real E2E of the in-memory entry point. Pitfall worth remembering: the
+  bootstrap ends with `exit $LASTEXITCODE`, which terminates whatever session
+  iex ran in. An in-process test driver therefore DIES at the handover and its
+  assertions never run — the first draft of this suite "passed" without
+  executing anything. The working design pipes the installer content into
+  `Invoke-Expression` in a CHILD pwsh (the faithful user shell), the sandbox
+  `Install.ps1` is a recording stub exiting with sentinel code 7, and all
+  assertions live in the parent. Nothing installs on the live machine.
+* Docs updated for ticket 09: `tests/TESTING.md` (audit section + status row),
+  `docs/rust-translate/knowledges.md` (entry-point pitfall), tracker
+  `09-exe-wrapper.md` (audit record).
+
+### 0.8 Session history (compressed, sessions 2–7)
 
 * **Session 2 (2026-10-08) — ticket 01.** The Rust + Tauri shell builds and the
   first suites land; artefact `releases/rust/KomorebiDashboard.exe`

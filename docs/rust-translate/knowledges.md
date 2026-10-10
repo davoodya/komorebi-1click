@@ -211,6 +211,19 @@ The Dashboard exposes **35** primary verbs organized into tabs:
   future writer of that seam must do the same or the state file and the Startup
   folder disagree (defect R6). Tests assert on the generated VBS, never only on
   the state file.
+* **Three installer entry points, one code path.** `komorebi-1click-install.exe`
+  (csc-built C# wrapper, ticket 09) locates `Install.ps1` next to itself,
+  relaunches itself elevated when needed, and forwards the exit code — it is
+  thin by design. A direct `.\Install.ps1` run sets `$PSScriptRoot` and works
+  as-is. Under `irm ... | iex` there is NO file behind the script, so
+  `$PSScriptRoot` is EMPTY: the installer's bootstrap branch resolves the repo
+  from `KOMOREBI_1CLICK_ROOT` (a local clone), else fetches the release archive
+  into `%LOCALAPPDATA%\komorebi-1click`, then re-execs the on-disk
+  `Install.ps1` with the same parameters — `exit $LASTEXITCODE` at the handover
+  terminates the iex session, which is exactly what a user's shell sees.
+  E2E proof lives in `tests/ticket09-irm-e2e.tests.ps1` (recording stub,
+  sentinel exit 7) — the bootstrap's `exit` also kills any test driver that
+  runs the iex in-process, so the assertion side MUST live in a parent process.
 * **The build host is Windows**: `cargo`/`npm` run through `win-exec.sh` with
   `ALLOW_WINDOWS=1` from WSL; a WSL-native build is not the contract. The
   wrapper has no console, which is why console-control-event tests SKIP there

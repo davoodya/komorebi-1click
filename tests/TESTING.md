@@ -158,6 +158,31 @@ must run in the Sandbox.
 | 06 — management-script portability | done | `ticket05-06-07.tests.ps1` T06.1–T06.5 static PASS; awaits a Sandbox run |
 | 03-followup — dead whkdrc hotkeys | done | T03f.1–T03f.2 (in the static suite and the Sandbox suite) |
 | 07 — export / import (directory selectors) | done | T07.1–T07.4 static PASS (91 assertions) + a full export→mutate→import round trip verified in a sandbox profile |
+| 09 — EXE wrapper + irm install path | done | 40 wrapper assertions (compile + execute against a stub) + 7 irm-E2E assertions, exit 0 on the dev machine |
+
+**Ticket 09 — EXE wrapper + the irm path (`tests/ticket09-exe-wrapper.tests.ps1` and
+`tests/ticket09-irm-e2e.tests.ps1`, deep-audited 2026-10-10, session 10):**
+
+* **The wrapper suite** (40 assertions, exit 0) compiles `scripts/komorebi-install.cs`
+  with the same `csc` flags `scripts/build-exe.ps1` uses, then EXECUTES the compiled
+  binary against a recording stub: argument order (the stub must receive
+  `-SkipElevationCheck` AFTER the verb, defect fixed 2026-10-10), exit-code
+  forwarding (0/1/64), the elevation decision, the UAC-message and content-locator
+  laws, and — with the executable actually built as a GUI-subsystem binary — that
+  the assembly is exactly the shipped one (9728 bytes; rebuilt from the current
+  source in session 10 and re-verified).
+* **The irm E2E** (7 assertions, exit 0) pipes the installer CONTENT into
+  `Invoke-Expression` in a child pwsh — the faithful `irm | iex` shape, no file
+  behind the script — with `KOMOREBI_1CLICK_ROOT` pointing at a sandbox whose
+  `Install.ps1` is a recording stub. It proves the in-memory branch fires, the
+  override is honoured (no fetch attempted), the handover really runs, the
+  repo it runs from is the override, and the session ends with the stub's
+  sentinel exit code 7 (the bootstrap's `exit $LASTEXITCODE` terminating the
+  iex session). A second case points the URL at a directory with no release
+  zip and proves the default branch attempts the fetch and fails loudly —
+  with no network contacted and no install started. Live machine untouched.
+* Both suites run on the development machine: the stub replaces the installer
+  everywhere, so nothing is installed and no elevation is requested.
 
 ## Tickets 05, 06 and 07 — what was built and how it is verified
 
