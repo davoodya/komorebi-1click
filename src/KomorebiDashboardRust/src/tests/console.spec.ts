@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { CONSOLE_CHAR_CAP, DEFAULT_CONSOLE_PERCENT, console_, newRunId } from '../lib/console.svelte.ts';
+import {
+  CONSOLE_CHAR_CAP,
+  DEFAULT_CONSOLE_PERCENT,
+  DRAG_PERCENT_STEP,
+  console_,
+  newRunId,
+  percentFromDrag
+} from '../lib/console.svelte.ts';
 import type { OutputBatch, ScriptResult } from '../lib/ipc';
 
 function batch(runId: string, count: number, text = 'x'.repeat(10)): OutputBatch {
@@ -117,6 +124,42 @@ describe('console store', () => {
     expect(console_.percent).toBe(60);
     console_.setPercent(2);
     expect(console_.percent).toBe(10);
+  });
+
+
+  // Ticket 09 — the drag readout.
+  describe('the drag readout', () => {
+    // A 400px body whose top edge sits at y=200.
+    const TOP = 200;
+    const HEIGHT = 400;
+
+    it('reads the pointer against the BODY, not the window', () => {
+      // Bottom of the body: the tallest allowed height, clamped to 60.
+      expect(percentFromDrag(TOP, HEIGHT, TOP + HEIGHT)).toBe(60);
+      // Middle: half.
+      expect(percentFromDrag(TOP, HEIGHT, TOP + HEIGHT / 2)).toBe(50);
+      // Top edge: the shortest, clamped to 10.
+      expect(percentFromDrag(TOP, HEIGHT, TOP)).toBe(10);
+      // Above the body entirely.
+      expect(percentFromDrag(TOP, HEIGHT, TOP - 500)).toBe(10);
+      // Well past the bottom.
+      expect(percentFromDrag(TOP, HEIGHT, TOP + HEIGHT + 500)).toBe(60);
+    });
+
+    it('survives a degenerate rect with the default, never NaN', () => {
+      // A zero-height body (mid-layout, or a display:none ancestor) must not
+      // poison the persisted document with NaN.
+      expect(percentFromDrag(TOP, 0, TOP + 100)).toBe(DEFAULT_CONSOLE_PERCENT);
+      expect(percentFromDrag(TOP, -50, 10)).toBe(DEFAULT_CONSOLE_PERCENT);
+    });
+
+    it('steps the keyboard resize by whole percents inside the band', () => {
+      expect(DRAG_PERCENT_STEP).toBe(5);
+      expect(percentFromDrag(TOP, HEIGHT, TOP + 30)).toBe(10); // ~7.5% rounds under the band
+      console_.setPercent(58);
+      console_.setPercent(console_.percent + DRAG_PERCENT_STEP);
+      expect(console_.percent).toBe(60);
+    });
   });
 
   it('generates a distinct run id per dispatch', () => {

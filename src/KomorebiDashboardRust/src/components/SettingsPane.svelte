@@ -21,6 +21,7 @@
     status,
   } from '../lib/settings.svelte.ts';
   import { currentAccent, hasCustomAccent } from '../lib/settings.svelte.ts';
+  import TypographyControls from './TypographyControls.svelte';
   import { theme } from '../lib/theme.svelte.ts';
 
   let confirming = $state(false);
@@ -34,17 +35,20 @@
   }
 
   const statusText = $derived.by(() => {
-    switch (status().kind) {
+    // Read the status ONCE so the switch narrows the union: each variant's
+    // own field is legal inside its case.
+    const current = status();
+    switch (current.kind) {
       case 'saved':
         return 'Preferences saved.';
       case 'reset':
         return 'Every preference restored to its default.';
       case 'quarantined':
-        return `The settings file was corrupt and was kept as ${status.file} — defaults are in use until you save.`;
+        return `The settings file was corrupt and was kept as ${current.file} — defaults are in use until you save.`;
       case 'revealed':
         return 'Opened the settings folder in Explorer.';
       case 'error':
-        return `Settings error: ${status.message}`;
+        return `Settings error: ${current.message}`;
       default:
         return lastQuarantine() ? `Previous corruption kept as ${lastQuarantine()}.` : '';
     }
@@ -82,6 +86,12 @@
       Toggle Color
     </button>
   </div>
+
+  <!--
+    Ticket 08 — the typography controls live on this tab: the document carries
+    them, so the Settings pane owns their editing.
+  -->
+  <TypographyControls />
 
   <div class="settings-actions">
     <button

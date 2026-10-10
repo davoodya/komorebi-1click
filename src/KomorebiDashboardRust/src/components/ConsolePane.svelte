@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { console_ } from '../lib/console.svelte.ts';
+  import { console_, percentFromDrag, DRAG_PERCENT_STEP } from '../lib/console.svelte.ts';
   import { cancelLiveRun } from '../lib/dispatch';
   import { formatDuration, formatLineCount, runStateLabel } from '../lib/format';
+  import { settingsDocument, updateSettings } from '../lib/settings.svelte.ts';
 
   let body = $state<HTMLDivElement | null>(null);
   /** True while the reader is pinned to the end of the transcript. */
@@ -35,9 +36,80 @@
     void lineCount;
     if (body && atEnd) body.scrollTop = body.scrollHeight;
   });
+
+  // ---- Ticket 09: the drag handle -----------------------------------------
+  //
+  // The pane's top edge is a real separator: pointer capture keeps the drag on
+  // the handle even when the pointer outruns it, the arrow keys do the same
+  // without a pointer at all, and the chosen height persists through the
+  // settings document (one writer — the same document Apply writes) so it
+  // survives a restart and is identical on every tab.
+  let dragging = $state(false);
+
+  function startDrag(event: PointerEvent): void {
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLElement)) return;
+    const pane = target.parentElement;
+    if (!pane) return;
+    target.setPointerCapture(event.pointerId);
+    dragging = true;
+    onDragTo(event.clientY, pane);
+  }
+
+  function onDragTo(clientY: number, pane: HTMLElement): void {
+    const rect = pane.getBoundingClientRect();
+    console_.setPercent(percentFromDrag(rect.top, rect.height, clientY));
+  }
+
+  function endDrag(): void {
+    if (!dragging) return;
+    dragging = false;
+    void persistPercent();
+  }
+
+  function onHandleKey(event: KeyboardEvent): void {
+    const step =
+      event.key === 'ArrowUp' ? DRAG_PERCENT_STEP : event.key === 'ArrowDown' ? -DRAG_PERCENT_STEP : 0;
+    if (step === 0) return;
+    event.preventDefault();
+    console_.setPercent(console_.percent + step);
+    void persistPercent();
+  }
+
+  /** Persist the height only when it actually changed what the document holds. */
+  async function persistPercent(): Promise<void> {
+    const value = console_.percent;
+    if (value === settingsDocument.consolePercent) return;
+    await updateSettings({ consolePercent: value });
+  }
 </script>
 
 <footer class="console-pane" style="height: {console_.percent}%">
+  <!--
+    Ticket 09 — the drag handle sits ON the pane's top edge: a 6px strip with
+    the row-resize cursor. It is a separator for assistive tech carrying the
+    live value, and the arrow keys move it the same way.
+  -->
+  <div
+    class="console-handle"
+    class:dragging
+    role="separator"
+    aria-orientation="horizontal"
+    aria-label="Console height"
+    aria-valuenow={console_.percent}
+    aria-valuemin={10}
+    aria-valuemax={60}
+    tabindex="0"
+    data-testid="console-drag"
+    onpointerdown={startDrag}
+    onpointermove={(event) => {
+      if (dragging && event.currentTarget.parentElement) {
+        onDragTo(event.clientY, event.currentTarget.parentElement);
+      }
+    }}
+    onpointerup={endDrag}
+    onkeydown={onHandleKey}
+  ></div>
   <div class="console-header">
     <span>Console</span>
     {#if console_.verb}

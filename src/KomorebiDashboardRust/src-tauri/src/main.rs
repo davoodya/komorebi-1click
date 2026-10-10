@@ -271,6 +271,20 @@ fn emit_to_stdio(batch: dashboard_core::OutputBatch) {
 }
 
 // =============================================================================
+// Ticket 08 — font enumeration.
+//
+// `reg query` spawns a process and reads two registry keys: the call belongs
+// OFF the UI thread, which is exactly what a Tauri async command gives us —
+// the list opens instantly, and the enumeration happens once behind the
+// sentinel.
+// =============================================================================
+
+#[tauri::command]
+async fn list_installed_fonts() -> Vec<String> {
+    dashboard_core::fonts::enumerate_installed()
+}
+
+// =============================================================================
 // Ticket 06 — the settings document, over the IPC boundary.
 // =============================================================================
 //
@@ -356,7 +370,8 @@ fn main() {
             get_settings,
             save_settings,
             reset_settings,
-            reveal_settings_folder
+            reveal_settings_folder,
+            list_installed_fonts
         ])
         .run(tauri::generate_context!())
         .expect("Dashboard runtime failed");

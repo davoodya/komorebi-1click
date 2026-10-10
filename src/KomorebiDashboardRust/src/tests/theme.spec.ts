@@ -12,8 +12,12 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   CUSTOM_ACCENT_SEED,
   applyAppearance,
+  applyTypography,
+  consoleFontStack,
   readAppearance,
-  resolveTheme
+  resolveTheme,
+  scaleMultiplier,
+  uiFontStack
 } from '../lib/theme';
 
 describe('reading a stored appearance', () => {
@@ -85,6 +89,50 @@ describe('applying an appearance to the document', () => {
 
 // Ticket 07 — the custom accent: one seed hex declared in BOTH files the
 // runtime touches, and the selector the runtime sets when the accent is a hex.
+// Ticket 08 — the typography writer.
+describe('typography', () => {
+  const VALUES = {
+    fontFamily: 'Tahoma',
+    fontSize: 15,
+    consoleFontFamily: 'Cascadia Mono',
+    consoleFontSize: 13,
+    uiScale: 125
+  };
+  let root: HTMLElement;
+
+  beforeEach(() => {
+    root = document.documentElement;
+    for (const property of ['--ui-font', '--ui-font-size', '--console-font', '--console-font-size', '--ui-scale']) {
+      root.style.removeProperty(property);
+    }
+  });
+
+  it('writes every typography property the CSS consumes', () => {
+    applyTypography(root, VALUES);
+    expect(root.style.getPropertyValue('--ui-font')).toBe(uiFontStack('Tahoma'));
+    expect(root.style.getPropertyValue('--ui-font-size')).toBe('15px');
+    expect(root.style.getPropertyValue('--console-font')).toBe(consoleFontStack('Cascadia Mono'));
+    expect(root.style.getPropertyValue('--console-font-size')).toBe('13px');
+    // The CSS multiplies by this, so it must be unitless: 125% -> 1.25.
+    expect(root.style.getPropertyValue('--ui-scale')).toBe('1.25');
+  });
+
+  it('converts every supported scale and never reaches zero', () => {
+    expect(scaleMultiplier(100)).toBe(1);
+    expect(scaleMultiplier(125)).toBe(1.25);
+    expect(scaleMultiplier(150)).toBe(1.5);
+    expect(scaleMultiplier(0)).toBeGreaterThan(0);
+    expect(scaleMultiplier(-10)).toBeGreaterThan(0);
+  });
+
+  it('keeps a monospaced fallback under a console face', () => {
+    // A missing console font must degrade to SOMETHING monospaced, or the
+    // output's columns drift.
+    expect(consoleFontStack('Cascadia Mono')).toMatch(/monospace$/);
+    expect(uiFontStack('Tahoma')).toMatch(/sans-serif$/);
+  });
+});
+
 describe('the custom accent', () => {
   const css = readFileSync(resolve(process.cwd(), 'src/app.css'), 'utf8');
   let root: HTMLElement;

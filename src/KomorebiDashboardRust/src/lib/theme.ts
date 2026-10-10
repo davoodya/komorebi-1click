@@ -106,3 +106,50 @@ export function applyAppearance(root: HTMLElement, theme: string, accent: string
   }
   root.style.colorScheme = theme;
 }
+
+
+// ---------------------------------------------------------------------------
+// Ticket 08 — typography.
+//
+// The CSS already consumes these five properties (app.css: --ui-font,
+// --ui-font-size, --console-font, --console-font-size, --ui-scale); this is
+// the one place the runtime writes them, whether the value comes from the
+// settings document or from a live preview.
+// ---------------------------------------------------------------------------
+
+/** The typography values the runtime can write, in document units (percent). */
+export interface TypographyValues {
+  fontFamily: string;
+  fontSize: number;
+  consoleFontFamily: string;
+  consoleFontSize: number;
+  uiScale: number;
+}
+
+/** The percent scale (100/125/150) as the unitless multiplier the CSS multiplies by. */
+export function scaleMultiplier(percent: number): number {
+  return Math.max(0.5, Number(percent) / 100);
+}
+
+/** A CSS font stack for a UI face: the name, then the shell's default, then the generic. */
+export function uiFontStack(family: string): string {
+  return `${family}, Segoe UI, sans-serif`;
+}
+
+/** A CSS font stack for a console face: the name, then a monospaced default. */
+export function consoleFontStack(family: string): string {
+  return `${family}, Cascadia Mono, Consolas, monospace`;
+}
+
+/**
+ * Write the typography values onto the root element. Pure over (root, values):
+ * a live preview and a document load call exactly this function, so the
+ * preview cannot drift from what Apply persists.
+ */
+export function applyTypography(root: HTMLElement, values: TypographyValues): void {
+  root.style.setProperty('--ui-font', uiFontStack(values.fontFamily));
+  root.style.setProperty('--ui-font-size', `${values.fontSize}px`);
+  root.style.setProperty('--console-font', consoleFontStack(values.consoleFontFamily));
+  root.style.setProperty('--console-font-size', `${values.consoleFontSize}px`);
+  root.style.setProperty('--ui-scale', String(scaleMultiplier(values.uiScale)));
+}

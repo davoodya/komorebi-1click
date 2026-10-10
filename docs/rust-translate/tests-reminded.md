@@ -116,6 +116,29 @@ On the production machine (Davood's box) or a spare machine — never automated:
 - [ ] Both themes (via Toggle Theme) render every accent — named and custom — with
       no unstyled area
 
+### Typography (ticket 08 — session 13)
+- [ ] The font pickers open instantly and the last entry reads
+      `Custom (All Fonts)...`; choosing it takes a beat, then the full installed
+      list appears and the PREVIOUS font stays selected
+- [ ] A second open of the expanded list is instant (the enumeration is cached)
+- [ ] The console font picker lists only monospaced faces
+- [ ] Changing family / size / scale redraws immediately with **nothing saved**;
+      **Apply** then makes it survive a relaunch; **Revert** restores the saved
+      values
+- [ ] **125% on the portrait monitor**: every tab + the Settings pane render with
+      no clipped, overlapping or overflowing layout (also covers the app font size)
+
+### Console pane (ticket 09 — session 13)
+- [ ] Dragging the console's top edge resizes it between 10% and 60%, on every
+      tab, and the drag feels attached to the edge (pointer capture)
+- [ ] The chosen height survives a relaunch
+- [ ] Scrolling up while a run streams does NOT snap back to the bottom;
+      scrolling back to the bottom resumes following
+- [ ] Clear mid-run empties the output without cancelling the run
+- [ ] The status line's percentage and line count track the view
+- [ ] The console keeps its own font/size after the app font changes (Settings →
+      typography → Apply)
+
 ### Elevation (ticket 12)
 6. **Unelevated**: click an admin row → the dialog appears with the exact title
    `Rerun as Administrator`, the buttons `Rerun as Administrator` / `Cancel`, and the feature list

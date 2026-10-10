@@ -39,7 +39,9 @@
     void registry.load();
     // The settings document is the appearance's single writer now: the load
     // applies theme + accent from the backend before the pane appears.
-    void theme.load();
+    // The document applies the console height too, through the same applier
+    // seam — one load, the whole document.
+    void theme.load((doc) => console_.setPercent(doc.consolePercent));
     void elevation.load();
     appInfo()
       .then((value) => {

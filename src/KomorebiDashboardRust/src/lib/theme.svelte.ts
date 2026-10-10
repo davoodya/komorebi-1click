@@ -11,15 +11,14 @@
 // header's Toggle Color button, plus a custom '#rrggbb' behind the Custom
 // sentinel that the Settings pane's colour input writes.
 
-import { CUSTOM_ACCENT_SEED, applyAppearance, nextAccent } from './theme';
-import { CUSTOM_COLOR_SCHEME, SETTINGS_DEFAULTS, effectiveAccentName, isNamedAccent } from './settings';
+import { CUSTOM_ACCENT_SEED, applyAppearance, applyTypography, nextAccent, type TypographyValues } from './theme';
+import { CUSTOM_COLOR_SCHEME, SETTINGS_DEFAULTS, effectiveAccentName, isNamedAccent, type SettingsDocument } from './settings';
 import {
   loadSettings,
   setAppearanceApplier,
   settingsDocument,
   updateSettings,
 } from './settings.svelte.ts';
-import type { SettingsDocument } from './settings';
 
 class ThemeStore {
   theme = $state<'dark' | 'light'>('dark');
@@ -36,8 +35,11 @@ class ThemeStore {
    * from the first frame after this resolves — there is no separate theme
    * store state that could disagree with it.
    */
-  async load(): Promise<void> {
-    setAppearanceApplier((doc: SettingsDocument) => this.applyFrom(doc));
+  async load(extra?: (doc: SettingsDocument) => void): Promise<void> {
+    setAppearanceApplier((doc: SettingsDocument) => {
+      this.applyFrom(doc);
+      extra?.(doc);
+    });
     await loadSettings();
   }
 
@@ -75,12 +77,42 @@ class ThemeStore {
     this.theme = doc.theme === 'Light' ? 'light' : 'dark';
     this.accent = effectiveAccentName(doc);
     this.apply();
+    // Ticket 08: the document carries the typography, so the document load
+    // applies it through the same writer the preview uses.
+    if (typeof document !== 'undefined') {
+      applyTypography(document.documentElement, typographyOf(doc));
+    }
+  }
+
+  /** Apply a whole document: theme, accent, typography. */
+  applyDocument(doc: SettingsDocument): void {
+    this.applyFrom(doc);
+    if (typeof document !== 'undefined') {
+      applyTypography(document.documentElement, typographyOf(doc));
+    }
+  }
+
+  /** Write the document's typography without touching theme or accent. */
+  applyDocumentTypography(doc: SettingsDocument): void {
+    if (typeof document === 'undefined') return;
+    applyTypography(document.documentElement, typographyOf(doc));
   }
 
   private apply(): void {
     if (typeof document === 'undefined') return;
     applyAppearance(document.documentElement, this.theme, this.accent);
   }
+}
+
+/** The five typography fields the document carries, in writer units. */
+export function typographyOf(doc: SettingsDocument): TypographyValues {
+  return {
+    fontFamily: doc.fontFamily,
+    fontSize: doc.fontSize,
+    consoleFontFamily: doc.consoleFontFamily,
+    consoleFontSize: doc.consoleFontSize,
+    uiScale: doc.uiScale
+  };
 }
 
 export const theme = new ThemeStore();

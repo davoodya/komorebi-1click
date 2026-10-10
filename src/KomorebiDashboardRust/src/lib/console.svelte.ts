@@ -142,6 +142,27 @@ class ConsoleStore {
   }
 }
 
+/**
+ * Ticket 09 — the share a drag position means.
+ *
+ * The console is the tab body's footer, so its height is read against the
+ * BODY's rect: the pointer's offset from the body's top edge as a percentage
+ * of the body's height, clamped into the supported band. A degenerate rect
+ * (a zero-height body during layout) falls back to the default rather than
+ * producing NaN, which would poison the persisted document.
+ */
+export function percentFromDrag(
+  bodyTop: number,
+  bodyHeight: number,
+  clientY: number
+): number {
+  if (!(bodyHeight > 0)) return clampConsolePercent(DEFAULT_CONSOLE_PERCENT);
+  return clampConsolePercent(((clientY - bodyTop) / bodyHeight) * 100);
+}
+
+/** One drag position, in whole percent of the body — the keyboard step. */
+export const DRAG_PERCENT_STEP = 5;
+
 export const console_ = new ConsoleStore();
 
 /** A short, unique-enough run id. The backend echoes it on every batch. */
