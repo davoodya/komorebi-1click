@@ -28,6 +28,9 @@ function Write-InstallerHeader {
     Write-Host ''
     Write-Host 'Komorebi-1click installer' -ForegroundColor Cyan
     Write-Host ('Repository root: {0}' -f $RepoRoot) -ForegroundColor DarkGray
+    if ($script:DryRun) {
+        Write-Host 'Mode: DRY RUN - nothing is installed or changed' -ForegroundColor Cyan
+    }
     Write-Host ''
 }
 
@@ -53,6 +56,19 @@ function Write-StepDone {
 function Write-StepSkipped {
     param([Parameter(Mandatory)][string]$Message)
     Write-Host ('    {0}' -f $Message) -ForegroundColor DarkGray
+}
+
+function Write-StepOutcome {
+    <#
+      Prints the step status honestly in BOTH modes: the dry-run wording when
+      nothing was actually written (the "[DRY-RUN] would ..." lines above it
+      carry the intention), and the real wording after a real action.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Dry,
+        [Parameter(Mandatory)][string]$Real
+    )
+    if ($script:DryRun) { Write-StepSkipped $Dry } else { Write-StepDone $Real }
 }
 
 # ===========================================================================
@@ -496,10 +512,15 @@ function Install-MsiProduct {
     try {
         # REBOOT=Suppress: the components never need a reboot, and a suppressed
         # reboot keeps the install atomic from this script's point of view.
-        $exitCode = Start-Process -FilePath 'msiexec.exe' `
-            -ArgumentList @('/i', "`"$payloadPath`"", '/quiet', '/norestart', 'REBOOT=Suppress') `
-            -Wait -PassThru -NoNewWindow |
-            Select-Object -ExpandProperty ExitCode
+        if ($script:DryRun) {
+            Show-DryRunAction ("install " + $payloadPath + " with msiexec")
+            $exitCode = 0
+        } else {
+            $exitCode = Start-Process -FilePath 'msiexec.exe' `
+                -ArgumentList @('/i', "`"$payloadPath`"", '/quiet', '/norestart', 'REBOOT=Suppress') `
+                -Wait -PassThru -NoNewWindow |
+                Select-Object -ExpandProperty ExitCode
+        }
     } catch {
         Report-InstallerFailure `
             -Step   $stepName `
@@ -525,7 +546,7 @@ function Install-MsiProduct {
 
     # --- verify the result -------------------------------------------------
     $nowInstalled = Get-InstalledMsiVersion -ProductCode $ProductCode
-    if (-not $nowInstalled) {
+    if (-not $script:DryRun -and -not $nowInstalled) {
         Report-InstallerFailure `
             -Step   $stepName `
             -Cause  'msiexec reported success, but the product is not registered afterwards.' `
@@ -533,7 +554,7 @@ function Install-MsiProduct {
         throw "$DisplayName did not register after a successful msiexec exit code"
     }
 
-    if (-not (Test-Path -LiteralPath $DetectionProbe)) {
+    if (-not $script:DryRun -and -not (Test-Path -LiteralPath $DetectionProbe)) {
         Report-InstallerFailure `
             -Step   $stepName `
             -Cause  "The product registered, but the expected file is not present: $DetectionProbe" `
@@ -541,7 +562,11 @@ function Install-MsiProduct {
         throw "$DisplayName registered but its expected file is missing"
     }
 
-    Write-StepDone ("$DisplayName {0} installed." -f $nowInstalled)
+    if ($script:DryRun) {
+        Write-StepSkipped ("$DisplayName {0} would be installed." -f $ExpectedVersion)
+    } else {
+        Write-StepDone ("$DisplayName {0} installed." -f $nowInstalled)
+    }
 }
 
 <#
@@ -572,8 +597,13 @@ function Install-AutoHotkeyV1 {
     }
 
     try {
-        $process = Start-Process -FilePath $payloadPath -ArgumentList '/S' -Wait -PassThru
-        $exitCode = $process.ExitCode
+        if ($script:DryRun) {
+            Show-DryRunAction ("install " + $payloadPath + " (silent setup)")
+            $exitCode = 0
+        } else {
+            $process = Start-Process -FilePath $payloadPath -ArgumentList '/S' -Wait -PassThru
+            $exitCode = $process.ExitCode
+        }
     } catch {
         Report-InstallerFailure `
             -Step   $stepName `
@@ -591,7 +621,7 @@ function Install-AutoHotkeyV1 {
     }
 
     $exe = Join-Path $env:ProgramFiles 'AutoHotkey\AutoHotkey.exe'
-    if (-not (Test-Path -LiteralPath $exe)) {
+    if (-not $script:DryRun -and -not (Test-Path -LiteralPath $exe)) {
         Report-InstallerFailure `
             -Step   $stepName `
             -Cause  "The setup reported success, but $exe is not present." `
@@ -599,7 +629,7 @@ function Install-AutoHotkeyV1 {
         throw 'AutoHotkey v1 setup succeeded but AutoHotkey.exe is missing'
     }
 
-    Write-StepDone ('AutoHotkey v1 installed.')
+    if ($script:DryRun) { Write-StepSkipped 'AutoHotkey v1 would be installed.' } else { Write-StepDone ('AutoHotkey v1 installed.') }
 }
 
 <#
@@ -635,8 +665,13 @@ function Install-AutoHotkeyV2 {
     Write-Step ("AutoHotkey v2 {0} is not installed. Installing..." -f $expected)
 
     try {
-        $process = Start-Process -FilePath $payloadPath -ArgumentList '/silent' -Wait -PassThru
-        $exitCode = $process.ExitCode
+        if ($script:DryRun) {
+            Show-DryRunAction ("install " + $payloadPath + " (silent setup)")
+            $exitCode = 0
+        } else {
+            $process = Start-Process -FilePath $payloadPath -ArgumentList '/silent' -Wait -PassThru
+            $exitCode = $process.ExitCode
+        }
     } catch {
         Report-InstallerFailure `
             -Step   $stepName `
@@ -654,7 +689,7 @@ function Install-AutoHotkeyV2 {
     }
 
     $exe = Join-Path $env:ProgramFiles 'AutoHotkey\v2\AutoHotkey64.exe'
-    if (-not (Test-Path -LiteralPath $exe)) {
+    if (-not $script:DryRun -and -not (Test-Path -LiteralPath $exe)) {
         Report-InstallerFailure `
             -Step   $stepName `
             -Cause  "The setup reported success, but $exe is not present." `
@@ -662,7 +697,7 @@ function Install-AutoHotkeyV2 {
         throw 'AutoHotkey v2 setup succeeded but AutoHotkey64.exe is missing'
     }
 
-    Write-StepDone ('AutoHotkey v2 installed.')
+    if ($script:DryRun) { Write-StepSkipped 'AutoHotkey v2 would be installed.' } else { Write-StepDone ('AutoHotkey v2 installed.') }
 }
 
 # ===========================================================================
@@ -694,6 +729,81 @@ function Install-Yasb {
         -ExpectedVersion '2.0.7' `
         -DetectionProbe (Join-Path $env:ProgramFiles 'YASB\yasb.exe') `
         -DisplayName    'YASB'
+}
+
+
+# ===========================================================================
+# Dry-run mode (2026-10-10)
+#
+# Set-InstallerDryRun turns every mutating action into a printed intention, so
+# the WHOLE pipeline (payload integrity, state detection, config comparison,
+# PATH/task/patch steps) can be exercised on a live, working machine without
+# changing a single byte of it. Reads and comparisons stay real: the state the
+# pipeline reports is the machine's true state. Put together with the Windows
+# Sandbox suites, a verification run never needs to disturb a live install.
+# ===========================================================================
+
+# Initialise the flag ONLY when it does not exist yet. Install.ps1 declares
+# -DryRun as a switch PARAMETER, which lives in this very script scope once this
+# file is dot-sourced, so an unconditional assignment here reset the caller's
+# requested value to $false and dry-run mode stayed completely inert: the
+# banner never printed and every guard stayed off (found 2026-10-10).
+if (-not (Test-Path variable:script:DryRun)) { $script:DryRun = $false }
+
+function Set-InstallerDryRun {
+    param([switch]$Enabled)
+    $script:DryRun = [bool]$Enabled
+}
+
+function Show-DryRunAction {
+    param([string]$What)
+    Write-Host ("    [DRY-RUN] would " + $What) -ForegroundColor Cyan
+}
+
+function New-InstallerDirectory {
+    param([string]$Path)
+    if ($script:DryRun) { Show-DryRunAction ("create directory " + $Path); return }
+    [System.IO.Directory]::CreateDirectory($Path) | Out-Null
+}
+
+function Copy-InstallerFile {
+    param(
+        [string]$LiteralPath,
+        [string]$Destination,
+        [string]$Description = ''
+    )
+    if ($script:DryRun) {
+        Show-DryRunAction ("copy " + $(if ($Description) { $Description } else { "$LiteralPath -> $Destination" }))
+        return
+    }
+    Copy-Item -LiteralPath $LiteralPath -Destination $Destination -Force
+}
+
+function Write-InstallerFile {
+    param(
+        [string]$Path,
+        [string]$Content,
+        [string]$Description = ''
+    )
+    if ($script:DryRun) {
+        Show-DryRunAction ("write " + $(if ($Description) { $Description } else { $Path }))
+        return
+    }
+    [System.IO.File]::WriteAllText($Path, $Content, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function Invoke-InstallerAction {
+    <#
+      Runs a mutating action, or - in dry-run mode - prints what WOULD happen
+      and skips it. Used for the actions that are not file writes (scheduled
+      tasks, komorebic stop/start, yasb autostart, shortcut creation).
+    #>
+    param(
+        [string]$Description,
+        [scriptblock]$Action
+    )
+    if ($script:DryRun) { Show-DryRunAction $Description; return }
+    & $Action
 }
 
 # ===========================================================================
@@ -790,10 +900,10 @@ function Install-KomorebiPatch {
     # --- stop the running pair so the binary file is not locked ---------------
     $wasRunning = ($null -ne (Get-Process -Name 'komorebi' -ErrorAction SilentlyContinue))
     if ($wasRunning) {
-        if (Test-Path -LiteralPath $komorebic) { & $komorebic stop --whkd 2>&1 | Out-Null }
+        if (Test-Path -LiteralPath $komorebic) { Invoke-InstallerAction "stop komorebi and whkd (komorebic stop --whkd)" { & $komorebic stop --whkd 2>&1 | Out-Null } }
         Start-Sleep -Seconds 2
         if ($null -ne (Get-Process -Name 'komorebi' -ErrorAction SilentlyContinue)) {
-            Stop-Process -Name 'komorebi' -Force -ErrorAction SilentlyContinue
+            if (-not $script:DryRun) { Stop-Process -Name 'komorebi' -Force -ErrorAction SilentlyContinue }
             Start-Sleep -Seconds 1
         }
     }
@@ -802,10 +912,10 @@ function Install-KomorebiPatch {
     try {
         $orig = Join-Path (Split-Path $installed -Parent) 'komorebi.exe.orig'
         if (-not (Test-Path -LiteralPath $orig)) {
-            Copy-Item -LiteralPath $installed -Destination $orig -Force
+            Copy-InstallerFile -LiteralPath $installed -Destination $orig -Description "preserve the MSI-installed binary as komorebi.exe.orig"
             Write-StepDone 'Preserved the original binary as komorebi.exe.orig.'
         }
-        Copy-Item -LiteralPath $patched -Destination $installed -Force
+        Copy-InstallerFile -LiteralPath $patched -Destination $installed -Description "deploy the patched komorebi.exe"
     } catch {
         Report-InstallerFailure `
             -Step   $stepName `
@@ -815,18 +925,22 @@ function Install-KomorebiPatch {
     }
 
     # --- verify the deployed file is EXACTLY the pinned binary -----------------
-    $afterHash = (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash
-    if ($afterHash -ne $PatchedSha256) {
-        Report-InstallerFailure `
-            -Step   $stepName `
-            -Cause  ("The deployed komorebi.exe does not match the pinned patched binary.`n      expected {0}`n      found    {1}" -f $PatchedSha256, $afterHash) `
-            -Remedy 'Restore komorebi.exe.orig from the install directory and investigate; the copy did not land intact.'
-        throw 'patched komorebi.exe did not deploy intact'
+    if ($script:DryRun) {
+        Show-DryRunAction ('verify the deployed komorebi.exe matches the pinned SHA256 ' + $PatchedSha256)
+    } else {
+        $afterHash = (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash
+        if ($afterHash -ne $PatchedSha256) {
+            Report-InstallerFailure `
+                -Step   $stepName `
+                -Cause  ("The deployed komorebi.exe does not match the pinned patched binary.`n      expected {0}`n      found    {1}" -f $PatchedSha256, $afterHash) `
+                -Remedy 'Restore komorebi.exe.orig from the install directory and investigate; the copy did not land intact.'
+            throw 'patched komorebi.exe did not deploy intact'
+        }
     }
 
     # --- bring the pair back through the same socket pairing whkd needs --------
     if ($wasRunning -and (Test-Path -LiteralPath $komorebic)) {
-        & $komorebic start --whkd 2>&1 | Out-Null
+        Invoke-InstallerAction "start komorebi with whkd again (komorebic start --whkd)" { & $komorebic start --whkd 2>&1 | Out-Null }
         Start-Sleep -Seconds 2
         if ($null -eq (Get-Process -Name 'komorebi' -ErrorAction SilentlyContinue)) {
             Report-InstallerFailure `
@@ -1033,14 +1147,14 @@ function New-KomorebiConfig {
     $template.display_index_preferences = Get-GeneratedDisplayIndexPreferences -Displays $Displays
 
     $dir = Split-Path $OutputPath -Parent
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    if (-not (Test-Path $dir)) { New-InstallerDirectory $dir }
 
     # Depth 100 covers the nested monitors/workspaces tree. The emitted file is
     # UTF8 without a BOM: komorebi's JSON parser is serde_json, which is fine
     # with UTF8, but a BOM on a file that Rust reads via fs::read can surface as
     # a stray character in error messages.
     $json = $template | ConvertTo-Json -Depth 100
-    [System.IO.File]::WriteAllText($OutputPath, $json, (New-Object System.Text.UTF8Encoding($false)))
+    Write-InstallerFile -Path $OutputPath -Content $json
 }
 
 function New-Whkdrc {
@@ -1061,7 +1175,7 @@ function New-Whkdrc {
     param([Parameter(Mandatory)][string] $TemplatePath, [Parameter(Mandatory)][string] $OutputPath)
 
     $dir = Split-Path $OutputPath -Parent
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    if (-not (Test-Path $dir)) { New-InstallerDirectory $dir }
 
     $content = Get-Content $TemplatePath -Raw -Encoding UTF8
     $targetProfile = $env:USERPROFILE.TrimEnd('\')
@@ -1072,7 +1186,7 @@ function New-Whkdrc {
     # overload that takes a plain string avoids that interpretation.
         $rewritten = [regex]::Replace($content, [regex]::Escape('C:\Users\DavoodYa'), $targetProfile)
 
-    [System.IO.File]::WriteAllText($OutputPath, $rewritten, (New-Object System.Text.UTF8Encoding($false)))
+    Write-InstallerFile -Path $OutputPath -Content $rewritten
 }
 
 function New-RestartWhkdCmd {
@@ -1092,7 +1206,7 @@ function New-RestartWhkdCmd {
     }
 
     $dir = Split-Path $OutputPath -Parent
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    if (-not (Test-Path $dir)) { New-InstallerDirectory $dir }
 
     $content = Get-Content -LiteralPath $TemplatePath -Raw -Encoding ASCII
     # Neither operand is a pattern here: the placeholder is a literal token and
@@ -1104,7 +1218,7 @@ function New-RestartWhkdCmd {
     # CRLF, no BOM: cmd.exe tolerates a BOM on .cmd files but a UTF-8 BOM before
     # @echo off has been known to break older shells, and the file is pure ASCII.
     $enc = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText($OutputPath, ($rewritten -replace "`r`n|`n", "`r`n"), $enc)
+    Write-InstallerFile -Path $OutputPath -Content ($rewritten -replace "`r`n|`n", "`r`n")
 }
 
 function New-ApplicationsJson {
@@ -1113,8 +1227,8 @@ function New-ApplicationsJson {
     param([Parameter(Mandatory)][string] $TemplatePath, [Parameter(Mandatory)][string] $OutputPath)
 
     $dir = Split-Path $OutputPath -Parent
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    Copy-Item $TemplatePath $OutputPath -Force
+    if (-not (Test-Path $dir)) { New-InstallerDirectory $dir }
+    Copy-InstallerFile -LiteralPath $TemplatePath -Destination $OutputPath -Description "applications.json into the config home"
 }
 
 function New-KomorebiResizeJson {
@@ -1124,8 +1238,8 @@ function New-KomorebiResizeJson {
     param([Parameter(Mandatory)][string] $OutputPath)
 
     $dir = Split-Path $OutputPath -Parent
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    [System.IO.File]::WriteAllText($OutputPath, '', (New-Object System.Text.UTF8Encoding($false)))
+    if (-not (Test-Path $dir)) { New-InstallerDirectory $dir }
+    Write-InstallerFile -Path $OutputPath -Content ''
 }
 
 function New-YasbConfig {
@@ -1143,7 +1257,7 @@ function New-YasbConfig {
     param([Parameter(Mandatory)][string] $TemplatePath, [Parameter(Mandatory)][string] $SensorScript, [Parameter(Mandatory)][string] $OutputPath)
 
     $dir = Split-Path $OutputPath -Parent
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    if (-not (Test-Path $dir)) { New-InstallerDirectory $dir }
 
     $content = Get-Content $TemplatePath -Raw -Encoding UTF8
     $pattern = '(?<=powershell -NoProfile -ExecutionPolicy Bypass -File )\\?[^"]*?sensor-color\.ps1'
@@ -1154,7 +1268,7 @@ function New-YasbConfig {
     $escapedTarget = $SensorScript -replace '\\', '\\'
     $rewritten = [regex]::Replace($content, $pattern, { param($m) $escapedTarget })
 
-    [System.IO.File]::WriteAllText($OutputPath, $rewritten, (New-Object System.Text.UTF8Encoding($false)))
+    Write-InstallerFile -Path $OutputPath -Content $rewritten
 }
 
 function Test-GeneratedConfig {
@@ -1220,7 +1334,10 @@ function Install-Configuration {
         New-KomorebiConfig -TemplatePath (Join-Path $template 'komorebi.json') `
                            -OutputPath   $komorebiJson `
                            -Displays     $displays
-        Write-StepDone ('Komorebi configuration generated for {0} monitor(s): {1}.' -f `
+        Write-StepOutcome `
+            -Dry  ('Komorebi configuration would be generated for {0} monitor(s): {1}.' -f `
+            $displays.Count, ($displays -join ', ')) `
+            -Real ('Komorebi configuration generated for {0} monitor(s): {1}.' -f `
             $displays.Count, ($displays -join ', '))
     }
 
@@ -1235,7 +1352,7 @@ function Install-Configuration {
         Write-StepSkipped 'whkdrc is already in place.'
     } else {
         New-Whkdrc -TemplatePath $whkdrcTemplate -OutputPath $whkdrc
-        Write-StepDone 'whkdrc copied with the target user paths.'
+        Write-StepOutcome -Dry 'whkdrc would be copied with the target user paths.' -Real 'whkdrc copied with the target user paths.'
     }
 
     # --- the alt+o restart wrapper ------------------------------------------
@@ -1252,7 +1369,7 @@ function Install-Configuration {
         Write-StepSkipped 'restart-whkd.cmd is already generated for this machine.'
     } else {
         New-RestartWhkdCmd -TemplatePath $restartWhkdTemplate -OutputPath $restartWhkdPath -KomorebicPath $komorebic
-        Write-StepDone "restart-whkd.cmd generated with this machine's komorebic path."
+        Write-StepOutcome -Dry "restart-whkd.cmd would be generated with this machine's komorebic path." -Real "restart-whkd.cmd generated with this machine's komorebic path."
     }
 
     # --- applications.json ---------------------------------------------------
@@ -1260,7 +1377,7 @@ function Install-Configuration {
         Write-StepSkipped 'applications.json is already in place.'
     } else {
         New-ApplicationsJson -TemplatePath (Join-Path $template 'applications.json') -OutputPath $applications
-        Write-StepDone 'applications.json copied.'
+        Write-StepOutcome -Dry 'applications.json would be copied.' -Real 'applications.json copied.'
     }
 
     # --- ASC path sanity (repaired 2026-10-10, finding F3) -------------------
@@ -1286,7 +1403,11 @@ function Install-Configuration {
 
     # --- resize state (created empty, always) --------------------------------
     New-KomorebiResizeJson -OutputPath $resizeState
-    if ((Get-Item $resizeState).Length -eq 0) {
+    if (-not (Test-Path -LiteralPath $resizeState)) {
+        # Dry run: the empty state file was never written, so there is nothing
+        # to inspect. The real run takes the branch below.
+        Write-StepSkipped 'komorebi-resize.json would be created empty (runtime state).'
+    } elseif ((Get-Item $resizeState).Length -eq 0) {
         Write-StepDone 'komorebi-resize.json created empty (runtime state).'
     } else {
         Write-StepSkipped 'komorebi-resize.json already exists and holds runtime state — left untouched.'
@@ -1347,16 +1468,20 @@ function Install-Configuration {
         if ($upToDate) {
             Write-StepSkipped ('{0} is already in place (the {1} hotkey).' -f $c.Name, $c.Bind)
         } else {
-            Copy-Item -LiteralPath $srcPath -Destination $destPath -Force
+            Copy-InstallerFile -LiteralPath $srcPath -Destination $destPath -Description ("companion script " + $c.Name)
             if ($markerPath) {
-                [System.IO.File]::WriteAllText($markerPath, ($RepoRoot.TrimEnd('\') + "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+                Write-InstallerFile -Path $markerPath -Content ($RepoRoot.TrimEnd('\') + "`r`n")
             }
-            Write-StepDone ('{0} installed (the {1} hotkey).' -f $c.Name, $c.Bind)
+            Write-StepOutcome -Dry ('{0} would be installed (the {1} hotkey).' -f $c.Name, $c.Bind) -Real ('{0} installed (the {1} hotkey).' -f $c.Name, $c.Bind)
         }
     }
 
     # --- Validation ----------------------------------------------------------
-    if (-not $SkipValidation) {
+    if (-not $SkipValidation -and -not (Test-Path -LiteralPath $komorebiJson)) {
+        # Dry run: the configuration was not written, so there is no file for
+        # komorebic to validate. Say so instead of failing on a missing file.
+        Write-StepSkipped 'komorebic check skipped in dry run (the configuration was not written).'
+    } elseif (-not $SkipValidation) {
         Write-Step 'Validating the generated configuration'
         $report = Test-GeneratedConfig -Komorebic $komorebic -ConfigPath $komorebiJson
         if ($report) {
@@ -1496,7 +1621,7 @@ function Set-AhkEnabledState {
 
     $file = Get-AhkStateFile -RepoRoot $RepoRoot
     $dir  = Split-Path $file -Parent
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    if (-not (Test-Path $dir)) { New-InstallerDirectory $dir }
 
     # Write with an ordered object so the file is stable and diffable.
     $ordered = [ordered]@{}
@@ -1504,7 +1629,7 @@ function Set-AhkEnabledState {
         $name = $script.Name
         $ordered[$name] = [bool]$State[$name]
     }
-    $ordered | ConvertTo-Json | Set-Content -LiteralPath $file -Encoding UTF8
+    if ($script:DryRun) { Show-DryRunAction ("write " + $file) } else { $ordered | ConvertTo-Json | Set-Content -LiteralPath $file -Encoding UTF8 }
 
     # Layer the just-written state onto the in-memory manifest BEFORE rendering.
     # Without this the file says one thing and the regenerated VBS keeps every
@@ -1616,13 +1741,14 @@ function New-AppRunnerVbs {
     $content = Get-GeneratedAppRunnerContent -TemplatePath $TemplatePath -AhkDir $AhkDir
 
     $dir = Split-Path $OutputPath -Parent
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    if (-not (Test-Path $dir)) { New-InstallerDirectory $dir }
 
     # UTF8 without a BOM, CRLF. VBScript parses either line ending, but the
     # shipped template is CRLF and staying byte-identical to it keeps the
-    # idempotency comparison exact.
-    $enc = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText($OutputPath, $content, $enc)
+    # idempotency comparison exact. The write goes through the guarded helper
+    # (same UTF8-no-BOM encoding), so a dry run prints the intention instead of
+    # overwriting the real Startup folder.
+    Write-InstallerFile -Path $OutputPath -Content $content -Description 'AppRunner.vbs into the Startup folder'
 }
 
 function Install-AutoHotkeyStartup {
@@ -1675,10 +1801,16 @@ function Install-AutoHotkeyStartup {
         Write-StepSkipped 'AppRunner.vbs is already generated for this machine and repository.'
     } else {
         New-AppRunnerVbs -TemplatePath $template -OutputPath $outputPath -AhkDir $ahkDir
-        Write-StepDone 'AppRunner.vbs generated in the Startup folder.'
+        Write-StepOutcome -Dry 'AppRunner.vbs would be generated in the Startup folder.' -Real 'AppRunner.vbs generated in the Startup folder.'
     }
 
     # --- verify the result ---------------------------------------------------
+    if ($script:DryRun) {
+        # Dry run: the file was not written, so there is nothing to read back.
+        # The real run performs the full reference check below.
+        Show-DryRunAction 'verify the generated AppRunner.vbs references every shipped script and interpreter'
+        return
+    }
     if (-not (Test-Path -LiteralPath $outputPath)) {
         throw "AppRunner.vbs was not written to '$outputPath'."
     }
@@ -1769,7 +1901,7 @@ function Add-KomorebicToPath {
     if ($already) { return $false }
 
     $newPath = if ($machinePath) { "$machinePath;$dir" } else { $dir }
-    [Environment]::SetEnvironmentVariable('Path', $newPath, 'Machine')
+    if ($script:DryRun) { Show-DryRunAction ("append " + $dir + " to the machine PATH") } else { [Environment]::SetEnvironmentVariable('Path', $newPath, 'Machine') }
     $env:Path = "$env:Path;$dir"
     return $true
 }
@@ -1790,8 +1922,12 @@ function New-WatchdogLauncher {
     if (-not (Test-Path $cs))  { return $null }
     if (-not (Test-Path $csc)) { return $null }
 
-    if (-not (Test-Path $exeDir)) { New-Item -ItemType Directory -Path $exeDir -Force | Out-Null }
+    if (-not (Test-Path $exeDir)) { New-InstallerDirectory $exeDir }
 
+    if ($script:DryRun) {
+        Show-DryRunAction ("compile the windowless watchdog launcher: " + $exe)
+        return $exe
+    }
     & $csc /nologo /target:winexe /optimize+ "/out:$exe" $cs 2>&1 | Out-Null
     if (-not (Test-Path $exe)) { return $null }
 
@@ -1813,7 +1949,9 @@ function Remove-LegacyStartupShortcut {
     # second komorebi against the same socket. It is removed unconditionally.
     $lnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\komorebi.lnk'
     if (Test-Path $lnk) {
-        Remove-Item $lnk -Force -ErrorAction SilentlyContinue
+        Invoke-InstallerAction ("remove the legacy Startup shortcut " + $lnk) {
+            Remove-Item -LiteralPath $lnk -Force -ErrorAction SilentlyContinue
+        }
         return $true
     }
     return $false
@@ -1837,10 +1975,12 @@ function Register-KomorebiLogonTask {
         -ExecutionTimeLimit ([TimeSpan]::Zero) `
         -StartWhenAvailable
 
-    Register-ScheduledTask -TaskName $script:TaskName `
-        -Action $taskAction -Trigger $taskTrigger `
-        -Principal $principal -Settings $taskSettings `
-        -Description 'komorebi window manager with whkd hotkeys' -Force | Out-Null
+    Invoke-InstallerAction ("register the scheduled task " + $script:TaskName) {
+        Register-ScheduledTask -TaskName $script:TaskName `
+            -Action $taskAction -Trigger $taskTrigger `
+            -Principal $principal -Settings $taskSettings `
+            -Description 'komorebi window manager with whkd hotkeys' -Force | Out-Null
+    }
 }
 
 function Register-KomorebiWatchdogTask {
@@ -1876,10 +2016,12 @@ function Register-KomorebiWatchdogTask {
         -ExecutionTimeLimit ([TimeSpan]::Zero) `
         -StartWhenAvailable
 
-    Register-ScheduledTask -TaskName $script:WatchTaskName `
-        -Action $taskAction -Trigger $taskTrigger `
-        -Principal $principal -Settings $taskSettings `
-        -Description 'restarts komorebi only if the WM has died' -Force | Out-Null
+    Invoke-InstallerAction ("register the scheduled task " + $script:WatchTaskName) {
+        Register-ScheduledTask -TaskName $script:WatchTaskName `
+            -Action $taskAction -Trigger $taskTrigger `
+            -Principal $principal -Settings $taskSettings `
+            -Description 'restarts komorebi only if the WM has died' -Force | Out-Null
+    }
 }
 
 function Enable-YasbAutostart {
@@ -1888,7 +2030,7 @@ function Enable-YasbAutostart {
     # Run key that drifts (ADR-0002).
     $yasbc = Get-Command yasbc -ErrorAction SilentlyContinue
     if (-not $yasbc) { return $false }
-    & $yasbc.Source enable-autostart 2>&1 | Out-Null
+    Invoke-InstallerAction "enable YASB autostart (yasbc enable-autostart)" { & $yasbc.Source enable-autostart 2>&1 | Out-Null }
     return $true
 }
 
@@ -1898,15 +2040,17 @@ function New-YasbAutostartFallback {
     param([Parameter(Mandatory)][string] $YasbExe)
 
     $startupDir = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
-    if (-not (Test-Path $startupDir)) { New-Item -ItemType Directory -Path $startupDir -Force | Out-Null }
+    if (-not (Test-Path $startupDir)) { New-InstallerDirectory $startupDir }
     $lnk = Join-Path $startupDir 'YASB.lnk'
 
-    $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut($lnk)
-    $shortcut.TargetPath = $YasbExe
-    $shortcut.WindowStyle = 7   # minimized; the bar is a windowless app anyway
-    $shortcut.Description = 'YASB status bar'
-    $shortcut.Save()
+    Invoke-InstallerAction ("create the YASB Startup shortcut " + $lnk) {
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($lnk)
+        $shortcut.TargetPath = $YasbExe
+        $shortcut.WindowStyle = 7   # minimized; the bar is a windowless app anyway
+        $shortcut.Description = 'YASB status bar'
+        $shortcut.Save()
+    }
     return $true
 }
 
@@ -1951,7 +2095,11 @@ function Install-StartupTasks {
     # --- the windowless watchdog launcher ------------------------------------
     $watchdogExe = New-WatchdogLauncher -RepoRoot $RepoRoot
     if ($watchdogExe) {
-        Write-StepDone 'Built the windowless watchdog launcher (no console flash).'
+        if ($script:DryRun) {
+            Write-StepSkipped 'Windowless watchdog launcher would be compiled (no console flash).'
+        } else {
+            Write-StepDone 'Built the windowless watchdog launcher (no console flash).'
+        }
     } else {
         Write-StepSkipped 'Watchdog launcher unavailable; the watchdog task will use powershell.exe.'
     }
@@ -1966,10 +2114,14 @@ function Install-StartupTasks {
         Write-StepSkipped "Scheduled task '$($script:TaskName)' is already registered at RunLevel Highest."
     } else {
         Register-KomorebiLogonTask -KomorebicPath $komorebic
-        if (-not (Test-ScheduledTaskRunLevelHighest -Name $script:TaskName)) {
+        if (-not $script:DryRun -and -not (Test-ScheduledTaskRunLevelHighest -Name $script:TaskName)) {
             throw "Scheduled task '$($script:TaskName)' was registered but is not at RunLevel Highest. Elevated windows would be unmanageable."
         }
-        Write-StepDone "Scheduled task '$($script:TaskName)' registered (logon, RunLevel Highest)."
+        if ($script:DryRun) {
+            Write-StepSkipped "Scheduled task '$($script:TaskName)' would be registered (logon, RunLevel Highest)."
+        } else {
+            Write-StepDone "Scheduled task '$($script:TaskName)' registered (logon, RunLevel Highest)."
+        }
     }
 
     # --- the watchdog task ---------------------------------------------------
@@ -1977,10 +2129,14 @@ function Install-StartupTasks {
         Write-StepSkipped "Scheduled task '$($script:WatchTaskName)' is already registered at RunLevel Highest."
     } else {
         Register-KomorebiWatchdogTask -ServiceScript $serviceScript -WatchdogExe $watchdogExe
-        if (-not (Test-ScheduledTaskRunLevelHighest -Name $script:WatchTaskName)) {
+        if (-not $script:DryRun -and -not (Test-ScheduledTaskRunLevelHighest -Name $script:WatchTaskName)) {
             throw "Scheduled task '$($script:WatchTaskName)' was registered but is not at RunLevel Highest. A respawned Komorebi would silently drop to Medium integrity."
         }
-        Write-StepDone "Scheduled task '$($script:WatchTaskName)' registered (every $($script:WatchdogMinutes) min, RunLevel Highest)."
+        if ($script:DryRun) {
+            Write-StepSkipped "Scheduled task '$($script:WatchTaskName)' would be registered (every $($script:WatchdogMinutes) min, RunLevel Highest)."
+        } else {
+            Write-StepDone "Scheduled task '$($script:WatchTaskName)' registered (every $($script:WatchdogMinutes) min, RunLevel Highest)."
+        }
     }
 
     # --- YASB autostart ------------------------------------------------------
@@ -1989,16 +2145,28 @@ function Install-StartupTasks {
         Write-StepSkipped 'YASB autostart is already enabled.'
     } elseif (Enable-YasbAutostart) {
         if (Test-YasbAutostartEnabled) {
+            if ($script:DryRun) {
+            Write-StepSkipped 'YASB autostart would be enabled via yasbc enable-autostart.'
+        } else {
             Write-StepDone 'YASB autostart enabled via yasbc enable-autostart.'
+        }
         } else {
             # The primary mechanism reported success but did not take effect.
             # Use the fallback rather than declare autostart done.
             New-YasbAutostartFallback -YasbExe $yasbExe | Out-Null
+            if ($script:DryRun) {
+            Write-StepSkipped 'YASB autostart would be enabled via the Startup-folder fallback.'
+        } else {
             Write-StepDone 'YASB autostart enabled via the Startup-folder fallback.'
+        }
         }
     } elseif (Test-Path $yasbExe) {
         New-YasbAutostartFallback -YasbExe $yasbExe | Out-Null
-        Write-StepDone 'YASB autostart enabled via the Startup-folder fallback.'
+        if ($script:DryRun) {
+            Write-StepSkipped 'YASB autostart would be enabled via the Startup-folder fallback.'
+        } else {
+            Write-StepDone 'YASB autostart enabled via the Startup-folder fallback.'
+        }
     } else {
         throw 'YASB is not installed, so its autostart cannot be set up.'
     }

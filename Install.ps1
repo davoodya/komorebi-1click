@@ -36,11 +36,26 @@
 param(
     # Skip the elevation check entirely. Intended for the EXE wrapper (it
     # elevates before it launches this script) and for automation.
-    [switch]$SkipElevationCheck
+    [switch]$SkipElevationCheck,
+
+    # Verification mode (2026-10-10). The FULL pipeline runs - payload
+    # integrity, installed state detection, config comparison - but every
+    # mutating action becomes a "[DRY-RUN] would ..." line instead of an
+    # action, so nothing is installed, written, or changed. This is the
+    # sanctioned way to prove the installer on a live, working machine (the
+    # Windows Sandbox suites cover the real-install path). The EXE wrapper
+    # forwards arguments, so `komorebi-1click-install.exe -DryRun` works too.
+    [switch]$DryRun
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+
+# Capture the requested mode BEFORE the shared library is dot-sourced. The
+# library initialises its own $DryRun flag in this same script scope, so the
+# switch parameter is copied into a variable the library never touches; the
+# banner and Set-InstallerDryRun below then use the captured value.
+$script:DryRunRequested = [bool]$DryRun
 
 # ---------------------------------------------------------------------------
 # Bootstrapping: resolve the repository root and load the installer library.
@@ -110,6 +125,17 @@ if ($PSScriptRoot) {
 
 . (Join-Path $RepoRoot 'scripts\Install-Common.ps1')
 
+Set-InstallerDryRun -Enabled:$script:DryRunRequested
+if ($script:DryRunRequested) {
+    Write-Host ''
+    Write-Host '=========================================================================' -ForegroundColor DarkGray
+    Write-Host '  DRY RUN: nothing will be installed, written, or changed.' -ForegroundColor Cyan
+    Write-Host '  Every read (payload hashes, installed state, config comparison) runs' -ForegroundColor DarkGray
+    Write-Host '  for real, so what you see is this machine''s true state.' -ForegroundColor DarkGray
+    Write-Host '=========================================================================' -ForegroundColor DarkGray
+    Write-Host ''
+}
+
 Write-InstallerHeader
 
 # ---------------------------------------------------------------------------
@@ -126,7 +152,11 @@ Write-InstallerHeader
 
 Assert-ArchitectureSupported
 
-if (-not $SkipElevationCheck) {
+if ($DryRun) {
+    # Nothing is written in a dry run, so elevation is unnecessary - and asking
+    # for it would defeat the purpose of a zero-impact verification.
+    Write-Host '  Dry run: skipping the elevation gate (no writes happen).' -ForegroundColor DarkGray
+} elseif (-not $SkipElevationCheck) {
     $forwarded = @()
     foreach ($key in $PSBoundParameters.Keys) {
         if ($key -ne 'SkipElevationCheck') { $forwarded += "-$key" }
