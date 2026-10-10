@@ -140,7 +140,7 @@ must run in the Sandbox.
 | 05 — AutoHotkey integration | done | `ticket05-06-07.tests.ps1` T05.1–T05.4, 13/13 static PASS; awaits a Sandbox run |
 | 06 — management-script portability | done | `ticket05-06-07.tests.ps1` T06.1–T06.5 static PASS; awaits a Sandbox run |
 | 03-followup — dead whkdrc hotkeys | done | T03f.1–T03f.2 (in the static suite and the Sandbox suite) |
-| 07 — export / import ZIP | done | T07.1–T07.4 static PASS + a full export→import round trip verified in a sandbox profile |
+| 07 — export / import (directory selectors) | done | T07.1–T07.4 static PASS (91 assertions) + a full export→mutate→import round trip verified in a sandbox profile |
 
 ## Tickets 05, 06 and 07 — what was built and how it is verified
 
@@ -148,7 +148,7 @@ All three are covered by **two** independent layers, so nothing is left to a vis
 
 ### Layer 1 — static, runs on the development machine (no Sandbox)
 
-`tests/ticket05-06-07.tests.ps1` — 61 assertions, exit 0 against the current tree:
+`tests/ticket05-06-07.tests.ps1` — 91 assertions, exit 0 against the current tree:
 
 - **T05.1–T05.4 (ticket 05):** the three `.ahk` scripts ship in the repo; `AppRunner.vbs` is a
   template carrying only the `RunHidden`/`RunNormal` helpers and the `AppRunnerEnd` marker; the
@@ -156,7 +156,7 @@ All three are covered by **two** independent layers, so nothing is left to a vis
   with no leftover marker and no machine path. This proves the generation logic, not just that a
   file exists.
 - **T06.1–T06.5 (ticket 06):** no management script references the source user or the `F:` backup
-  drive; each documented switch (`-Components`, `-Scope`, `-Percent`, `-ZipPath`) is *declared*,
+  drive; each documented switch (`-Components`, `-Scope`, `-Percent`, `-BackupPath`) is *declared*,
   *used* and backed by a `[ValidateSet]`; the companion scripts resolve their binaries through
   `common.ps1` or the repo marker rather than hardcoded paths; the watchdog mutex and the YASB
   registry PATH rebuild are intact; and every script parses cleanly.
@@ -165,10 +165,12 @@ All three are covered by **two** independent layers, so nothing is left to a vis
   now ships; every `.config` path the whkdrc names is a file the installer supplies; and the
   `New-Whkdrc` rewrite is proven by running it — it emits `C:\TARGETUSER\.config\...`, never the
   source user.
-- **T07.1–T07.4 (ticket 07):** the script ships and parses; the CLI form and the dialog form reach
-  the same code; the archive covers the full config set; compression is `System.IO.Compression`
-  with no third-party dependency; resize state is exported only when non-empty; and an import
-  always backs the live config up and stops/starts the WM around the restore.
+- **T07.1–T07.4 (ticket 07):** both export/import scripts ship and parse; the GUI (selector-provided)
+  and the CLI (argument-provided) forms reach the same code through `common.ps1`; the shared config
+  set covers the whole setup (whkdrc, komorebi.json, applications.json, restart-whkd.cmd,
+  toggle-transparency.ps1, safe-restart.ps1, the watchdog build, the YASB tree); no archive
+  dependency remains in either script; resize state travels only when non-empty; and an import
+  always validates the folder, backs the live config up, and stops/starts the WM around the restore.
 
 ### Layer 2 — the Sandbox suite (real install, real target machine)
 
@@ -177,21 +179,31 @@ All three are covered by **two** independent layers, so nothing is left to a vis
 - **T03f.1–T03f.2** — the repaired bindings are actually present in the generated whkdrc, and the
   three files those hotkeys call exist in `%USERPROFILE%\.config`, including the
   `safe-restart.repo.txt` marker.
-- **T07.1–T07.3** — a real export→import round trip: snapshot the live config by SHA256, export to
-  a ZIP, import it back, and assert every file is byte-identical afterwards, plus that a
+- **T07.1–T07.3** — a real export→import round trip: snapshot the live config by SHA256, export to a
+  backup directory, import it back, and assert every file is byte-identical afterwards, plus that a
   `pre-import-backup-*` directory holding the old whkdrc was left behind.
 
-### The export→import round trip, verified
+### The export→import round trip, verified (reworked to directory selectors, 2026-10-10)
 
-`config-export-import.ps1` was executed end to end against a sandboxed profile (a fake
-`%USERPROFILE%` under `%TEMP%`, so the reference machine was never touched):
+On Davood's instruction the mechanism changed from a ZIP archive with file dialogs to plain
+directories with folder selectors: Export opens a directory selector and creates
+`komorebi-backup-<timestamp>\` inside the chosen folder; Import opens the same selector and the
+chosen backup **replaces** the live config. The ZIP machinery (`System.IO.Compression`, Save/Open
+file dialogs) was removed from both scripts, and the config set plus the selector were unified into
+`common.ps1` (`Get-ConfigExportSet`, `Get-CriticalConfigSet`, `Show-DirectorySelector`), because the
+Dashboard's set and the standalone set had drifted apart (each one was missing part of the setup).
+
+`config-export-import.ps1` and `komorebi-backup.ps1` (the Dashboard's button script) were executed
+end to end against a sandboxed profile (a fake `%USERPROFILE%` under `%TEMP%`, so the reference
+machine was never touched; the komorebi-backup copy had its WM-kill neutralized, so the live window
+manager was never stopped):
 
 ```
-export:  archive written: ...\k1c-t7-rt2\backup.zip (9 entries)
-import:  current config backed up to: ...\pre-import-backup-20261004-043615
-         9 file(s) restored.
-verify:  komorebi.json: KJSON-V4      whkdrc: WHKDRC-V4      widget: WIDGET-V4
-         komorebi.json NOT wrongly in .config: True
+export:  backup written: ...\k1c-t7-e2e\pick...\config (10 files, the empty resize state skipped)
+import:  rollback copy written to: ...\profile\.config\pre-import-20261010-...
+         whkdrc restored byte-identical; the stale yasb widget did NOT survive
+guard:   a foreign folder is refused with exit 1, naming whkdrc and komorebi.json
+E2E:     31/31 PASS
 ```
 
 Two real bugs were found and fixed by exactly this test before any code was committed:

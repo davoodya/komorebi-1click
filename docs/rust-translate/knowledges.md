@@ -84,8 +84,8 @@ The Dashboard exposes **35** primary verbs organized into tabs:
 ### Tab 3: Settings & Configuration (`Tabs.Settings`)
 - `startup-install`: Register logon + watchdog tasks (`komorebi-service.ps1 -Action install`).
 - `startup-remove`: Unregister tasks (`komorebi-service.ps1 -Action uninstall`).
-- `export`: Export config ZIP (`komorebi-backup.ps1 -Mode export -ZipPath [dir]`).
-- `import`: Import config ZIP (`komorebi-backup.ps1 -Mode import -ZipPath [file]`).
+- `export`: Export the configuration — a directory selector opens and the chosen folder gets a new `komorebi-backup-<timestamp>\` holding the whole config set (`komorebi-backup.ps1 -Mode export`).
+- `import`: Import the configuration — a directory selector opens and the chosen backup REPLACES the live config, with a rollback copy of the current config first (`komorebi-backup.ps1 -Mode import`).
 - `set-transparency`: Adjust window opacity (`toggle-transparency.ps1 -Percent <0-100>`).
 - `ignore-dashboard`: Add `ignore_rules` entry for the dashboard executable into `komorebi.json` (`ignore-dashboard.ps1`).
 - App Settings: Folder openers, Factory Reset, and Command Cancellation.

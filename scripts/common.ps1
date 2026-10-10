@@ -166,3 +166,66 @@ function Show-KomorebiDiagnosis {
     Write-Host ''
     Write-Host '  Nothing was changed by this report.' -ForegroundColor DarkGray
 }
+
+# =====================================================================
+# Export / import of the whole configuration (ticket 07)
+#
+# ONE set definition and ONE directory selector, shared by the
+# Dashboard's Export/Import buttons (komorebi-backup.ps1) and the
+# standalone tool (config-export-import.ps1). The two definitions had
+# already drifted once - the Dashboard set missed yasb\ and the
+# standalone set missed the watchdog build - and a backup that silently
+# loses part of the setup is worse than no backup at all.
+#
+#   Rel               path inside the backup directory
+#                     ("config\whkdrc", "config\yasb\<widget>\...")
+#   IsDir             the whole subtree travels
+#   OnlyWhenNonEmpty  pure runtime state (komorebi-resize.json): importing
+#                     another machine's offsets would distort the layout
+#
+# Every live path derives from $env:USERPROFILE, so an export taken on
+# one machine restores on another; nothing here is machine-specific.
+# =====================================================================
+
+function Get-ConfigExportSet {
+    $config = Join-Path $env:USERPROFILE '.config'
+    return @(
+        @{ Live = Join-Path $env:USERPROFILE 'komorebi.json';              Rel = 'config\komorebi.json' }
+        @{ Live = Join-Path $config 'whkdrc';                             Rel = 'config\whkdrc' }
+        @{ Live = Join-Path $config 'applications.json';                  Rel = 'config\applications.json' }
+        @{ Live = Join-Path $config 'restart-whkd.cmd';                   Rel = 'config\restart-whkd.cmd' }
+        @{ Live = Join-Path $config 'toggle-transparency.ps1';            Rel = 'config\toggle-transparency.ps1' }
+        @{ Live = Join-Path $config 'safe-restart.ps1';                   Rel = 'config\safe-restart.ps1' }
+        @{ Live = Join-Path $config 'komorebi-resize.json';               Rel = 'config\komorebi-resize.json'; OnlyWhenNonEmpty = $true }
+        @{ Live = Join-Path $config 'yasb';                               Rel = 'config\yasb';                 IsDir = $true }
+        @{ Live = Join-Path $config 'komorebi-watchdog.cs';               Rel = 'config\komorebi-watchdog.cs' }
+        @{ Live = Join-Path $env:USERPROFILE 'bin\komorebi-watchdog.exe'; Rel = 'config\komorebi-watchdog.exe' }
+    )
+}
+
+# An IMPORT refuses to touch anything until these files exist in the
+# chosen backup folder. whkdrc is the file hotkeys cannot work without;
+# komorebi.json carries the workspaces.
+function Get-CriticalConfigSet {
+    return @('config\whkdrc', 'config\komorebi.json')
+}
+
+# The native directory selector the Export/Import buttons use. Returns
+# $null when the user cancels; a caller must treat null as "cancelled"
+# and exit cleanly, never fall through with an empty path.
+function Show-DirectorySelector {
+    param(
+        [Parameter(Mandatory)][string] $Description,
+        [string] $SelectedPath
+    )
+    if (-not $SelectedPath) {
+        $SelectedPath = [Environment]::GetFolderPath('MyDocuments')
+    }
+    Add-Type -AssemblyName System.Windows.Forms
+    $dialog = New-Object -TypeName System.Windows.Forms.FolderBrowserDialog
+    $dialog.Description         = $Description
+    $dialog.SelectedPath        = $SelectedPath
+    $dialog.ShowNewFolderButton = $true
+    if ($dialog.ShowDialog() -ne 'OK') { return $null }
+    return $dialog.SelectedPath
+}

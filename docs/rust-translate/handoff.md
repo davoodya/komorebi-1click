@@ -12,16 +12,21 @@
 The Rust track's tickets `01`, `02`, `03`, `04` are **implemented, verified, and
 committed** (all pushed). The next ticket is **`05-elevation`** (Rust track).
 Session 8 applied the US 55 harness rework that session 7 had only designed
-(defect R7 closed: the interrupt is delivered by
-`CreateProcessW(..., CREATE_NEW_PROCESS_GROUP)` +
-`GenerateConsoleCtrlEvent` behind a `GetConsoleWindow()` host gate — measured
-end-to-end here, with the one real-console PASS left as Davood's manual run),
-and audited installer tickets `05-autohotkey-vbs` and `06-script-portability`
-deep-live: both fully implemented, suite 65/65, no genuine gaps (§0.4).
-Another session is concurrently editing `config/` (its live `whkdrc` edit drops
-the `alt+ctrl+shift+r` binding — now a loud WARN in the suite, decision left to
-Davood), `scripts/`, `tests/uia-dump.ps1` and `docs/Access-Denied-Solving/` — do not
-touch those paths.
+(defect R7 closed, the one real-console PASS left as Davood's manual run) and
+deep-audited installer tickets `05-autohotkey-vbs` and `06-script-portability`
+(no genuine gaps). Session 9 (2026-10-10): committed Davood's decision on the
+live `whkdrc` — the safe-restart binding restored, suite 66/66, and the suite's
+whkdrc comparison reworked to be line-wise (a `git show` array joined with
+`\\n` can never again fake a divergence off the trailing newline);
+**implemented Davood's new export/import mechanism** (installer ticket 07:
+directory selectors instead of ZIP file dialogs, one shared set definition in
+`common.ps1`, both the Dashboard's button script and the standalone tool on the
+same flow, E2E 31/31 in a sandboxed profile, suite 91/91); rebuilt
+`releases\rust\KomorebiDashboard.exe` so its usage advertises `-BackupPath`
+(same size, new hash). The next installer ticket is **`08-ahk-scripts`**.
+Another session is concurrently editing `config/`, `scripts/Install-Common.ps1`,
+`scripts/safe-restart.ps1`, `tests/uia-dump.ps1` and
+`docs/Access-Denied-Solving/` — do not touch those paths.
 
 If your connection drops, this document alone is enough to continue.
 
@@ -198,7 +203,55 @@ If your connection drops, this document alone is enough to continue.
   `tests/uia-dump.ps1`. This session's commit pathspecs: `tests/` +
   `docs/rust-translate/` only.
 
-### 0.5 Session history (compressed, sessions 2–7)
+### 0.5 Session 9 (2026-10-10) — the whkdrc decision landed; ticket 07 reworked to directory selectors
+
+* **Davood's whkdrc decision executed (commit `77fb9f6`, pushed).** The live
+  tuning edit had dropped the `alt+ctrl+shift+r` safe-restart binding; per
+  Davood it is now restored in the working copy and **committed** — 133
+  bindings, no duplicate keys (whkd panics on a double binding), so a fresh
+  install keeps the watchdog-safe restart. The suite's whkdrc comparison was
+  reworked from reconstructed strings to line arrays: `git show` returns an
+  array and `-join "`n"` drops the trailing newline, so the old comparison
+  reported a phantom divergence after every commit — now the WARN only fires
+  on a real difference (unit-checked both branches), and an extra assertion
+  pins the equality. Suite 66/66.
+* **Installer ticket 07 reworked to Davood's new mechanism** (commit in this
+  session, explicit pathspecs): clicking Export opens a native **directory**
+  selector and a fresh `komorebi-backup-<timestamp>\` with the WHOLE current
+  config set is created inside the chosen directory; clicking Import opens the
+  same selector and the chosen backup **replaces** the live config (rollback
+  copy first, WM stopped/started around the swap). The ZIP machinery
+  (`System.IO.Compression`, Save/Open file dialogs) was deleted from both
+  scripts, `-ZipPath` became `-BackupPath` (C# and Rust registries updated;
+  the Dashboard buttons and `EXPORT/IMPORT-CONFIG.bat` reach the no-path form
+  that opens the picker), and the config set + critical-file rule + selector
+  were unified into `common.ps1` (`Get-ConfigExportSet`,
+  `Get-CriticalConfigSet`, `Show-DirectorySelector`) because the Dashboard's
+  set and the standalone set had drifted (each missed part of the setup).
+  Import refuses a folder that is not a backup (`whkdrc` + `komorebi.json`
+  must be present, exit 1 otherwise) — the restore replaces, so a wrong
+  folder would silently wipe half the setup. `yasb` imports as a directory
+  REPLACE, not a merge (a stale widget must not survive).
+* **E2E, sandboxed profile, 31/31** (`tests/.build/t07-e2e.ps1`, fake
+  `%USERPROFILE%` under `%TEMP%`; the komorebi-backup copy had its WM-kill
+  neutralized so the live window manager was never stopped): full-set export,
+  empty resize state skipped / non-empty included, export→mutate→import round
+  trip byte-identical, stale widget gone, rollback kept, WM stop/start cycle
+  attempted, foreign folder refused. Static suite: **91 assertions, 0
+  failures**. Baseline re-measured: cargo 24, npm 63 (7 files), svelte-check
+  0/0, ticket08-ahk 19/19, shipped-text 215 files.
+* **Artifact rebuilt.** `releases\rust\KomorebiDashboard.exe` rebuilt with the
+  new registry strings — 6,450,176 bytes,
+  sha256 `4B1962A9FDD3F094D01BF17558503F722300EE5CD438656C95100FE948FEF97C`
+  (was `8EA3C3D1...`); its usage now advertises `-BackupPath [directory]`
+  (measured: unknown-verb exit 2 prints both new lines). The releases folder is
+  **not** git-tracked — the hash travels in this document, not in a commit.
+* Suite lesson recorded: never pass a multi-line regex string into the
+  PowerShell suite (the patch tool writes real CRLFs, and `(?s)` patterns with
+  embedded newlines produce phantom PASSes). The two affected assertions were
+  rewritten as single-line patterns.
+
+### 0.6 Session history (compressed, sessions 2–7)
 
 * **Session 2 (2026-10-08) — ticket 01.** The Rust + Tauri shell builds and the
   first suites land; artefact `releases/rust/KomorebiDashboard.exe`
@@ -680,7 +733,22 @@ against a `CreateProcessW(..., CREATE_NEW_PROCESS_GROUP)` child sharing the
 caller's console, behind a `GetConsoleWindow()` host gate; delivery machinery
 measured end-to-end on this host, and the remaining item is Davood's
 real-console run (`node tests\rust-ticket03-interrupt.mjs` from a normal
-window — procedure in §8 US 55).
+window — procedure in §8 US 55). **Davood ran it on 2026-10-10:**
+8 passed / 1 honest SKIP / 0 failed, and the SKIP is now itself the measured
+evidence (it names the pseudo-console cause and re-runs on a real console).
+
+**Next installer ticket: `08-ahk-scripts`.** Davood's sequence: ticket 07
+first (DONE in session 9 — §0.5), then ticket 08. The AHK lifecycle
+scripts (`ahk-toggle.ps1`, `ahk-script.ps1`, `ahk-cleanup.ps1`,
+`ahk-uninstall.ps1`) already ship; the R6 defect (the enable seam writing
+state while the watchdog re-launches) was fixed in session 6 and its suite is
+19/19. What ticket 08 still owes is the **live audit** in the shape of
+sessions 5–9: run the enable/disable cycles and the doctor against the live
+machine and a sandboxed copy, confirm state-file semantics and interpreter
+resolution, and close or extend the tracker's remaining box
+(`SCRIPTS-GUIDE.fa.md` documents ticket 08's bats) only against what was
+measured. The live-machine rule (§11) applies: enable/disable toggles real
+state on Davood's box — restore whatever the audit changes.
 
 **Before you start**, re-verify the baseline in §6.
 
@@ -766,10 +834,45 @@ them to `origin/main`. Session 8 lands the US 55 rework
 in the commit that carries this sentence, also with explicit pathspecs
 (`tests/`, `docs/rust-translate/`).
 
+**Session 9 (2026-10-10) — the whkdrc decision + ticket 07 rework:**
+
+```text
+MODIFIED
+ scripts/common.ps1                       (Get-ConfigExportSet / Get-CriticalConfigSet /
+                                           Show-DirectorySelector — the ONE shared definition)
+ scripts/komorebi-backup.ps1              (the Dashboard's Export/Import: directory selectors,
+                                           $BackupPath, -NoDialog, shared set, critical-file guard,
+                                           yasb directory REPLACE, common.ps1 resolution block)
+ scripts/config-export-import.ps1         (standalone tool: same flow, ZIP machinery REMOVED,
+                                           same shared set + selector)
+ scripts/EXPORT-CONFIG.bat                (comment: the picker flow)
+ scripts/IMPORT-CONFIG.bat                (comment: the picker flow; the F:\Backups path is gone)
+ scripts/SCRIPTS-GUIDE.md                 (section 5: picker flow, -BackupPath, the guard)
+ scripts/SCRIPTS-GUIDE.fa.md              (section 5, Persian: picker flow, no F:\Backups)
+ tests/ticket05-06-07.tests.ps1           (T07 rewritten: directory selectors + shared set, 91
+                                           assertions; whkdrc comparison line-wise; -BackupPath)
+ tests/TESTING.md                         (T07 description, E2E block, counts)
+ src/KomorebiDashboard/Services/VerbRegistry.cs   (usage texts: -BackupPath [directory] ×2)
+ src/KomorebiDashboardRust/src-tauri/src/registry.rs (same two strings in the Rust table)
+ docs/rust-translate/knowledges.md        (export/import verb descriptions)
+ docs/rust-translate/handoff.md           (§0, §0.5, §9, §10 — this document)
+
+ARTIFACT (not git-tracked)
+ releases\rust\KomorebiDashboard.exe     rebuilt: 6,450,176 bytes,
+                                           sha256 4B1962A9FDD3F094D01BF17558503F722300EE5CD438656C95100FE948FEF97C
+```
+
+**Committed.** Session 9's whkdrc decision landed as `77fb9f6`
+(`config/whkdrc` + the suite's line-wise comparison), pushed. The ticket-07
+rework lands in the commit that carries this paragraph, explicit pathspecs
+(`scripts/`, `tests/`, `src/`, `docs/rust-translate/`), never the other
+session's `config/`, `scripts/Install-Common.ps1`, `scripts/safe-restart.ps1`
+or `docs/` deletions.
+
 Pre-existing dirty entries that are **not** this work and must not be committed
 with it — most now belong to the other session working this tree concurrently:
 `config/komorebi.json`, `scripts/safe-restart.ps1`, `config/applications.json`,
-`config/config.yaml`, `config/whkdrc`, the two `docs/HANDOFF-*` deletions,
+`config/config.yaml`, `scripts/Install-Common.ps1`, the two `docs/HANDOFF-*` deletions,
 `config/mini_asc.json`, `scripts/safe-restart-backup-full.ps1`,
 `scripts/safe-restart-v1.ps1`, `tests/uia-dump.ps1`, `backup/`,
 `config/backup-last/`, `config/backup-2026-10-10/`, `scripts/step5/`,

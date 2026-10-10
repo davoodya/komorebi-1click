@@ -104,7 +104,7 @@ foreach ($pair in @(
     @{ File = 'uninstall-komorebi-whkd.ps1'; Name = 'Scope';       ValidateSet = 'all','komorebi-whkd','yasb','autohotkey' }
     @{ File = 'cleanup-komorebi-whkd.ps1';   Name = 'Scope';       ValidateSet = 'all','komorebi-whkd','yasb','autohotkey' }
     @{ File = 'toggle-transparency.ps1';     Name = 'Percent';     ValidateSet = $null }
-    @{ File = 'komorebi-backup.ps1';         Name = 'ZipPath';     ValidateSet = $null }
+    @{ File = 'komorebi-backup.ps1';         Name = 'BackupPath';  ValidateSet = $null }
 )) {
     $t = Get-Content -LiteralPath (Join-Path $scripts $pair.File) -Raw
 
@@ -244,34 +244,84 @@ Assert 'the installer writes the safe-restart repo marker'      ($t -match 'safe
 # Ticket 07 — export / import
 # =============================================================================
 
-Section 'T07.1 — the export/import script ships and parses'
-$ei = Join-Path $scripts 'config-export-import.ps1'
-Assert 'config-export-import.ps1 exists' (Test-Path -LiteralPath $ei)
-$tokens = $null; $errs = $null
-[System.Management.Automation.Language.Parser]::ParseFile($ei, [ref]$tokens, [ref]$errs) | Out-Null
-Assert 'config-export-import.ps1 parses' ($errs.Count -eq 0)
-
-Section 'T07.2 — the CLI and the GUI reach the same code'
-$t = Get-Content -LiteralPath $ei -Raw
-Assert 'the -Action parameter is validated'      ($t -match "\[ValidateSet\('export', 'import'\)\]")
-Assert 'the -ZipPath parameter is declared'      ($t -match '\$ZipPath')
-Assert 'export uses the Save dialog when no path' ($t -match 'Show-SaveDialog')
-Assert 'import uses the Open dialog when no path' ($t -match 'Show-OpenDialog')
-Assert 'a supplied path skips the dialog'        ($t -match 'if \(-not \$target -and -not \$NoDialog\)')
-
-Section 'T07.3 — the archive covers the full config set, ZipFile only, no 3rd party'
-foreach ($name in 'komorebi.json', 'whkdrc', 'applications.json', 'restart-whkd.cmd',
-                  'toggle-transparency.ps1', 'safe-restart.ps1', 'yasb') {
-    Assert ("the export set includes {0}" -f $name) ($t -match [regex]::Escape($name))
+Section 'T07.1 — both export/import scripts ship and parse'
+foreach ($name in 'config-export-import.ps1', 'komorebi-backup.ps1') {
+    $ei = Join-Path $scripts $name
+    Assert ("{0} exists" -f $name) (Test-Path -LiteralPath $ei)
+    $tokens = $null; $errs = $null
+    [System.Management.Automation.Language.Parser]::ParseFile($ei, [ref]$tokens, [ref]$errs) | Out-Null
+    Assert ("{0} parses" -f $name) ($errs.Count -eq 0)
 }
-Assert 'compression is System.IO.Compression'     ($t -match 'System\.IO\.Compression\.ZipFile')
-Assert 'no third-party compression dependency'    ($t -notmatch 'Ionic|SharpZipLib|DotNetZip|7z|sharpcompress')
-Assert 'resize state is included only when non-empty' ($t -match 'komorebi-resize\.json')
 
-Section 'T07.4 — import is non-destructive and restarts the WM'
-Assert 'import backs the live config up first'    ($t -match 'pre-import-backup')
-Assert 'import stops the WM before restoring'     ($t -match 'Stop-WindowManager')
-Assert 'import starts the WM afterwards'          ($t -match 'Start-WindowManager')
+# -----------------------------------------------------------------------------
+# The mechanism (Davood's spec, 2026-10-10): clicking Export opens a DIRECTORY
+# SELECTOR, and a directory holding every current config is created inside the
+# chosen directory; clicking Import opens a DIRECTORY SELECTOR and the chosen
+# backup's configs replace the live ones. No archive, no file dialog. The
+# Dashboard's buttons and the CLI reach the same code, and both scripts share
+# ONE set definition and ONE selector in common.ps1, so they cannot drift.
+# -----------------------------------------------------------------------------
+Section 'T07.2 — the GUI and the CLI reach the same directory-based code'
+$eiText = Get-Content -LiteralPath (Join-Path $scripts 'config-export-import.ps1') -Raw
+$bkText = Get-Content -LiteralPath (Join-Path $scripts 'komorebi-backup.ps1')    -Raw
+$cmText = Get-Content -LiteralPath (Join-Path $scripts 'common.ps1')             -Raw
+
+# the shared selector and the shared set live in common.ps1
+Assert 'common.ps1 ships the shared directory selector' ($cmText -match 'function Show-DirectorySelector')
+Assert 'the selector is a native FolderBrowserDialog'   ($cmText -match 'System\.Windows\.Forms\.FolderBrowserDialog')
+Assert 'common.ps1 ships the shared config set'         ($cmText -match 'function Get-ConfigExportSet')
+Assert 'common.ps1 ships the critical-file rule'        ($cmText -match 'function Get-CriticalConfigSet')
+
+# both scripts dot-source the shared module
+Assert 'config-export-import.ps1 dot-sources common.ps1' ($eiText -match 'common\.ps1')
+Assert 'komorebi-backup.ps1 dot-sources common.ps1'      ($bkText -match 'common\.ps1')
+
+# parameters: a DIRECTORY (the zip-shaped name is gone from the contract)
+Assert 'config-export-import.ps1 validates -Action'      ($eiText -match "\[ValidateSet\('export', 'import'\)\]")
+Assert 'config-export-import.ps1 declares -BackupPath'  ($eiText -match 'param\s*\([\s\S]*?\$BackupPath\b')
+Assert 'config-export-import.ps1 uses -BackupPath'      (([regex]::Matches($eiText, '\$BackupPath\b')).Count -ge 2)
+Assert 'config-export-import.ps1 declares -NoDialog'    ($eiText -match '\$NoDialog')
+Assert 'komorebi-backup.ps1 validates -Mode'            ($bkText -match "\[ValidateSet\('export', 'import'\)\]")
+Assert 'komorebi-backup.ps1 declares -BackupPath'       ($bkText -match 'param\s*\([\s\S]*?\$BackupPath\b')
+Assert 'komorebi-backup.ps1 uses -BackupPath'           (([regex]::Matches($bkText, '\$BackupPath\b')).Count -ge 2)
+Assert 'komorebi-backup.ps1 declares -NoDialog'         ($bkText -match '\$NoDialog')
+
+# dialogs: no path + no -NoDialog  ->  the directory selector
+Assert 'export falls back to the selector (config-export-import)'  (($eiText -match 'if \(-not \$BackupPath -and -not \$NoDialog\)') -and ($eiText -match 'Show-DirectorySelector'))
+Assert 'export falls back to the selector (komorebi-backup)'       (($bkText -match 'if \(-not \$BackupPath -and -not \$NoDialog\)') -and ($bkText -match 'Show-DirectorySelector'))
+Assert 'import shows the selector when no path (config-export-import)' ($eiText -match 'Show-DirectorySelector')
+Assert 'a cancelled selector exits cleanly'                           ($eiText -match 'Export cancelled|Export cancelled - no directory chosen')
+Assert 'the selector result is null-safe'                             (($eiText -match 'if \(-not \$picked') -or ($eiText -match 'if \(-not \$target'))
+
+# the zip machinery is gone from BOTH scripts
+Assert 'config-export-import.ps1 keeps no ZipFile code'   ($eiText -notmatch 'System\.IO\.Compression|ZipFile|CreateEntryFromFile|ExtractToFile')
+Assert 'komorebi-backup.ps1 keeps no ZipFile code'        ($bkText -notmatch 'System\.IO\.Compression|ZipFile|CreateEntryFromFile|ExtractToFile')
+
+Section 'T07.3 — the export covers the full config set, one shared definition'
+foreach ($name in 'komorebi\.json', 'whkdrc', 'applications\.json', 'restart-whkd\.cmd',
+                  'toggle-transparency\.ps1', 'safe-restart\.ps1', 'yasb', 'komorebi-resize\.json') {
+    Assert ("the shared set includes {0}" -f $name) ($cmText -match $name)
+}
+# the whole YASB bar travels as a directory tree
+Assert 'the shared set marks the YASB tree as a directory'  ($cmText -match 'IsDir')
+# resize state is pure runtime state: exported only when it holds real state
+Assert 'resize state travels only when non-empty'           ($cmText -match 'OnlyWhenNonEmpty')
+# no machine-specific path in the set — everything derives from the profile
+Assert 'the set derives every live path from the profile'   ($cmText -match '\$env:USERPROFILE')
+# and the export timestamped directory name is shared
+Assert 'export creates a timestamped directory'             (($eiText -match 'komorebi-backup-\{0\}') -and ($bkText -match 'komorebi-backup-'))
+
+Section 'T07.4 — import is non-destructive, validated, and restarts the WM'
+# komorebi-backup.ps1 (the Dashboard's Import Config button)
+Assert 'import refuses a folder without the critical files' ($bkText -match 'is not a komorebi backup')
+Assert 'komorebi-backup.ps1 keeps a rollback copy'          ($bkText -match 'pre-import-')
+Assert 'komorebi-backup.ps1 stops the WM before restoring' ($bkText -match 'function Stop-Wm')
+Assert 'komorebi-backup.ps1 starts the WM after restoring'  ($bkText -match 'function Start-Wm')
+Assert 'komorebi-backup.ps1 never reloads in place'         ($bkText -match 'Never run `komorebic\.exe reload-configuration')
+# config-export-import.ps1 (the standalone form)
+Assert 'import backs the live config up first'              ($eiText -match 'pre-import-backup')
+Assert 'import stops the WM before restoring'               ($eiText -match 'Stop-WindowManager')
+Assert 'import starts the WM afterwards'                    ($eiText -match 'Start-WindowManager')
 
 # =============================================================================
 # Result

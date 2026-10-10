@@ -104,13 +104,15 @@ one you have.
 
 | Script | What it does |
 |---|---|
-| `EXPORT-CONFIG.bat` | Copies the live config (whkdrc, komorebi.json, applications.json, restart-whkd.cmd, toggle-transparency.ps1, komorebi-watchdog.*) into a fresh timestamped folder under `%USERPROFILE%\.config\`, named `komorebi-backup-<yyyyMMdd-HHmmss>`. **Read-only for the system.** Engine: `komorebi-backup.ps1 -Mode export`. |
-| `IMPORT-CONFIG.bat` | Restores the config from a backup folder. **It first copies the current config into a `pre-import-<timestamp>` folder, so this is always reversible.** It then stops the WM, replaces the files, and starts again. Engine: `komorebi-backup.ps1 -Mode import`. |
+| `EXPORT-CONFIG.bat` | A folder picker opens; the folder you choose gets a fresh `komorebi-backup-<yyyyMMdd-HHmmss>\` with the whole live config (whkdrc, komorebi.json, applications.json, restart-whkd.cmd, toggle-transparency.ps1, safe-restart.ps1, the watchdog build, and the YASB tree). **Read-only for the system.** Engine: `komorebi-backup.ps1 -Mode export`. |
+| `IMPORT-CONFIG.bat` | A folder picker opens; the chosen backup **replaces** the live config. **It first copies the current config into a `pre-import-<timestamp>` folder, so this is always reversible.** It then stops the WM, replaces the files, and starts again. Engine: `komorebi-backup.ps1 -Mode import`. |
 
-> Backups are **not** written to a fixed location: each export creates its own
-> timestamped folder, so successive exports never overwrite each other. The
-> default is `%USERPROFILE%\.config\komorebi-backup-<timestamp>`; pass
-> `-ZipPath` to `komorebi-backup.ps1` to choose another.
+> Backups are **not** written to a fixed location: each export creates its own timestamped
+> folder inside the folder you pick, so successive exports never overwrite each other. Pass
+> `-BackupPath <folder>` to `komorebi-backup.ps1` (or `-Action export -BackupPath <folder>` to
+> `config-export-import.ps1`) to skip the picker; `-NoDialog` writes the default
+> `%USERPROFILE%\.config\komorebi-backup-<timestamp>` for headless use. An import refuses a
+> folder that does not contain `whkdrc` and `komorebi.json`.
 
 ---
 

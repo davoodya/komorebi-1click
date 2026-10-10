@@ -71,12 +71,12 @@ public static class VerbRegistry
         // ---- Settings / config -------------------------------------------
         // -Action, not add|remove: see the class comment. -Mode, not a bare
         // positional, or the first argument binds to the partition switch and
-        // trips its ValidateSet instead of reaching -ZipPath.
+        // trips its ValidateSet instead of reaching -BackupPath.
         new("startup",         "komorebi-service.ps1",    "-Action install|uninstall", true,  "Register or remove the logon + watchdog tasks", Tabs.Settings, "Startup", FixedArguments: "-Action install", RenderInGui: false),
         new("startup-install", "komorebi-service.ps1",    "-Action install",           true,  "Start komorebi + whkd automatically at logon, with a watchdog", Tabs.Settings, "Add to Startup",   FixedArguments: "-Action install",   ActionLabel: "Add"),
         new("startup-remove",  "komorebi-service.ps1",    "-Action uninstall",         true,  "Remove the logon and watchdog tasks; the running session is untouched", Tabs.Settings, "Remove from Startup", FixedArguments: "-Action uninstall", ActionLabel: "Remove"),
-        new("export",          "komorebi-backup.ps1",     "-ZipPath [directory]",      false, "Export the live configuration",                Tabs.Settings, "Export Config", FixedArguments: "-Mode export", Hint: "folder to write the backup into (optional)", ActionLabel: "Export"),
-        new("import",          "komorebi-backup.ps1",     "-ZipPath [file or folder]", false, "Restore the configuration from a backup",      Tabs.Settings, "Import Config", FixedArguments: "-Mode import", Hint: "backup folder to restore (optional)", ActionLabel: "Import"),
+        new("export",          "komorebi-backup.ps1",     "-BackupPath [directory]",  false, "Export the live configuration",                Tabs.Settings, "Export Config", FixedArguments: "-Mode export", Hint: "backup folder (optional) - leave empty to pick a folder", ActionLabel: "Export"),
+        new("import",          "komorebi-backup.ps1",     "-BackupPath [directory]",  false, "Restore the configuration from a backup",      Tabs.Settings, "Import Config", FixedArguments: "-Mode import", Hint: "backup folder to restore (optional) - leave empty to pick a folder", ActionLabel: "Import"),
         new("set-transparency", "toggle-transparency.ps1", "-Percent <0-100>",         false, "Set window transparency percent",              Tabs.Settings, "Set Transparency", Hint: "enter percentage only", ActionLabel: "Apply", NumericOnly: true),
 
         // On a multi-monitor desk komorebi mis-handles some WPF windows (this

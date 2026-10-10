@@ -90,8 +90,8 @@
 
 | اسکریپت | کارکرد |
 |---|---|
-| `EXPORT-CONFIG.bat` | کانفیگ زنده (whkdrc, komorebi.json, applications.json, restart-whkd.cmd, toggle-transparency.ps1, komorebi-watchdog.*) را داخل `F:\Backups\Software-Backups\komorebi-whkd\config` کپی می‌کند. **Read-only برای سیستم.** موتور: `komorebi-backup.ps1 -Mode export`. |
-| `IMPORT-CONFIG.bat` | کانفیگ را از backup folder بازمی‌گرداند. **ابتدا کانفیگ فعلی را به پوشه‌ی `pre-import-<timestamp>` کپی می‌کند، پس همیشه قابل بازگشت است.** سپس WM را stop می‌کند، فایل‌ها را جایگزین می‌کند، و دوباره start می‌کند. موتور: `komorebi-backup.ps1 -Mode import`. |
+| `EXPORT-CONFIG.bat` | یک پنجره‌ی انتخاب پوشه باز می‌کند؛ پوشه‌ای که انتخاب کنید یک زیرپوشه‌ی تازه‌ی `komorebi-backup-<yyyyMMdd-HHmmss>\` با تمام کانفیگ زنده (whkdrc، komorebi.json، applications.json، restart-whkd.cmd، toggle-transparency.ps1، safe-restart.ps1، خروجی watchdog و کل درخت YASB) می‌گیرد. **Read-only برای سیستم.** موتور: `komorebi-backup.ps1 -Mode export`. |
+| `IMPORT-CONFIG.bat` | یک پنجره‌ی انتخاب پوشه باز می‌کند؛ پوشه‌ی انتخاب‌شده کانفیگ زنده را **جایگزین** می‌کند. **ابتدا کانفیگ فعلی را به پوشه‌ی `pre-import-<timestamp>` کپی می‌کند، پس همیشه قابل بازگشت است.** سپس WM را stop می‌کند، فایل‌ها را جایگزین می‌کند، و دوباره start می‌کند. موتور: `komorebi-backup.ps1 -Mode import`. |
 
 ---
 

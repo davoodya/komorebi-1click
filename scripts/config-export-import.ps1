@@ -1,22 +1,29 @@
 # =====================================================================
 # config-export-import.ps1
 #
-#   Export the whole komorebi-1click config set to ONE ZIP archive, and
-#   import it back. Export goes through a native Windows Save dialog,
-#   import through a native Open dialog. Both paths also work from the
-#   CLI when -ZipPath is supplied, and both reach the SAME code, so a
-#   scripted export/import and a GUI one are the same operation.
+#   Export the whole komorebi-1click config set to a DIRECTORY, and import
+#   it back. Export opens a native directory selector and creates a fresh
+#   timestamped folder inside the chosen directory; import opens the same
+#   selector and REPLACES the live config from the chosen backup folder.
+#   Both paths also work from the CLI when -BackupPath is supplied, and
+#   both reach the SAME code, so a scripted export/import and a GUI one
+#   are the same operation.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File config-export-import.ps1 -Action export
 #   powershell -NoProfile -ExecutionPolicy Bypass -File config-export-import.ps1 -Action import
-#   powershell -NoProfile -ExecutionPolicy Bypass -File config-export-import.ps1 -Action export -ZipPath D:\bk.zip
+#   powershell -NoProfile -ExecutionPolicy Bypass -File config-export-import.ps1 -Action export -BackupPath D:\backups\komorebi-backup-2026-10-10
+#   powershell -NoProfile -ExecutionPolicy Bypass -File config-export-import.ps1 -Action export -NoDialog
+#
+#   The Dashboard's Export/Import buttons are exactly the no-path form:
+#   komorebi-backup.ps1 is the entry point there, and both scripts share
+#   the config set and the directory selector through common.ps1.
 #
 #   Import is NEVER destructive: the current live config is copied to a
 #   timestamped pre-import backup first, the WM is stopped, files are
 #   restored, then the WM is started again.
 #
-#   Archive format (a flat set of "config\<name>" entries plus the YASB
-#   tree under config\yasb\): see Export-ConfigSet.
+#   Backup layout (a plain directory, no archive): "config\<name>" entries
+#   plus the YASB tree under "config\yasb\" — see Get-ConfigExportSet.
 # =====================================================================
 #Requires -Version 5.1
 
@@ -25,129 +32,43 @@ param(
     [ValidateSet('export', 'import')]
     [string] $Action = 'export',
 
-    # When omitted: export uses a Save dialog, import uses an Open dialog.
-    # When supplied: no dialog is shown (the CLI path).
-    [string] $ZipPath,
+    # The backup DIRECTORY (a plain folder, not a zip). When omitted and no
+    # -NoDialog: a directory selector opens (the GUI form).
+    [string] $BackupPath,
 
-    # Skips the dialogs even when -ZipPath is absent (for tests / headless).
+    # Skips the directory selector even when -BackupPath is absent
+    # (tests / headless): export then writes .config\komorebi-backup-<stamp>.
     [switch] $NoDialog
 )
 
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.IO.Compression
-Add-Type -AssemblyName System.IO.Compression.FileSystem
+# Dot-source common.ps1 for the shared config set, the critical-file rule and
+# the directory selector. Resolution: next to this script (the repo and the
+# shipped layout both put it there), then the repo root recorded in the
+# installer marker, then %USERPROFILE%\.config. Nothing else is loaded.
+$commonPs1 = Join-Path $PSScriptRoot 'common.ps1'
+if (-not (Test-Path -LiteralPath $commonPs1)) {
+    $marker = Join-Path $PSScriptRoot 'safe-restart.repo.txt'
+    if (Test-Path -LiteralPath $marker) {
+        $repoRoot = ((Get-Content -LiteralPath $marker -Raw) -replace "`r`n|`n", '').Trim()
+        $candidate = Join-Path $repoRoot 'scripts\common.ps1'
+        if (Test-Path -LiteralPath $candidate) { $commonPs1 = $candidate }
+    }
+}
+if (-not (Test-Path -LiteralPath $commonPs1)) {
+    $commonPs1 = Join-Path $env:USERPROFILE '.config\common.ps1'
+}
+if (-not (Test-Path -LiteralPath $commonPs1)) {
+    throw 'common.ps1 (the shared config-set definition and directory selector) was not found next to this script, at the repo root, or in %USERPROFILE%\.config'
+}
+. $commonPs1   # Get-ConfigExportSet / Get-CriticalConfigSet / Show-DirectorySelector
 
 $ConfigHome = Join-Path $env:USERPROFILE '.config'
-$YasbHome   = Join-Path $ConfigHome 'yasb'
 
 function Say($msg, $color = 'Gray') { Write-Host $msg -ForegroundColor $color }
 
-# ---------------------------------------------------------------------
-# The set this setup ships, as relative archive paths. Every live path is
-# derived from $env:USERPROFILE, so nothing here is machine-specific.
-# komorebi-resize.json is INCLUDED ONLY WHEN NON-EMPTY: it is pure runtime
-# state (per-monitor resize offsets) and importing another machine's stale
-# offsets would silently distort the layout on the target.
-# ---------------------------------------------------------------------
-function Get-ConfigEntries {
-    $entries = @(
-        @{ Live = Join-Path $env:USERPROFILE 'komorebi.json';                    Rel = 'komorebi.json' }
-        @{ Live = Join-Path $ConfigHome 'whkdrc';                                 Rel = 'whkdrc' }
-        @{ Live = Join-Path $ConfigHome 'applications.json';                     Rel = 'applications.json' }
-        @{ Live = Join-Path $ConfigHome 'restart-whkd.cmd';                      Rel = 'restart-whkd.cmd' }
-        @{ Live = Join-Path $ConfigHome 'toggle-transparency.ps1';               Rel = 'toggle-transparency.ps1' }
-        @{ Live = Join-Path $ConfigHome 'safe-restart.ps1';                      Rel = 'safe-restart.ps1' }
-    )
-    # The YASB tree is a whole directory (config.yaml + widgets + styles).
-    if (Test-Path -LiteralPath $YasbHome) {
-        $entries += @{ Live = $YasbHome; Rel = 'yasb'; IsDir = $true }
-    }
-    return $entries
-}
-
 # =====================================================================
-# Dialogs
-# =====================================================================
-
-function Show-SaveDialog {
-    $suggested = 'komorebi-1click-config-{0}.zip' -f (Get-Date -Format 'yyyy-MM-dd')
-    $dialog = New-Object -TypeName System.Windows.Forms.SaveFileDialog
-    $dialog.Filter      = 'ZIP archive (*.zip)|*.zip'
-    $dialog.DefaultExt  = '.zip'
-    $dialog.FileName    = $suggested
-    $dialog.Title       = 'Export the komorebi configuration to'
-    $dialog.OverwritePrompt = $true
-    if ($dialog.ShowDialog() -ne 'OK') { return $null }
-    return $dialog.FileName
-}
-
-function Show-OpenDialog {
-    $dialog = New-Object -TypeName System.Windows.Forms.OpenFileDialog
-    $dialog.Filter   = 'ZIP archive (*.zip)|*.zip'
-    $dialog.Title    = 'Import the komorebi configuration from'
-    if ($dialog.ShowDialog() -ne 'OK') { return $null }
-    return $dialog.FileName
-}
-
-# =====================================================================
-# EXPORT
-# =====================================================================
-
-function Export-ConfigSet {
-    param([Parameter(Mandatory)][string] $DestinationZip)
-
-    $entries = Get-ConfigEntries
-
-    # Include komorebi-resize.json ONLY when it holds real runtime state.
-    $resize = Join-Path $ConfigHome 'komorebi-resize.json'
-    if ((Test-Path -LiteralPath $resize) -and (Get-Item -LiteralPath $resize).Length -gt 0) {
-        $entries += @{ Live = $resize; Rel = 'komorebi-resize.json' }
-        Say '  komorebi-resize.json holds runtime state - included.' 'DarkGray'
-    } else {
-        Say '  komorebi-resize.json is empty or absent - skipped (no stale offsets exported).' 'DarkGray'
-    }
-
-    $dir = Split-Path $DestinationZip -Parent
-    if ($dir -and -not (Test-Path -LiteralPath $dir)) {
-        New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    }
-    if (Test-Path -LiteralPath $DestinationZip) {
-        Remove-Item -LiteralPath $DestinationZip -Force
-    }
-
-    $zip = [System.IO.Compression.ZipFile]::Open($DestinationZip, 'Create')
-    try {
-        $count = 0
-        foreach ($e in $entries) {
-            if (-not (Test-Path -LiteralPath $e.Live)) {
-                Say ("  skipped (not present): {0}" -f $e.Rel) 'DarkGray'
-                continue
-            }
-            if ($e.IsDir) {
-                # A directory becomes a tree of entries under <rel>\.
-                $files = Get-ChildItem -LiteralPath $e.Live -Recurse -File
-                foreach ($f in $files) {
-                    $rel = ($f.FullName.Substring($e.Live.TrimEnd('\').Length + 1)) -replace '\\', '/'
-                    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $f.FullName, ($e.Rel + '/' + $rel)) | Out-Null
-                    $count++
-                }
-            } else {
-                [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $e.Live, $e.Rel) | Out-Null
-                $count++
-            }
-            Say ("  added: {0}" -f $e.Rel) 'DarkGray'
-        }
-    }
-    finally {
-        $zip.Dispose()
-    }
-
-    Say ("  archive written: {0} ({1} entr{2})" -f $DestinationZip, $count, $(if ($count -eq 1) { 'y' } else { 'ies' })) 'Green'
-    return $count
-}
-
-# =====================================================================
-# IMPORT
+# Window manager restart around the swap
 # =====================================================================
 
 function Stop-WindowManager {
@@ -169,63 +90,114 @@ function Start-WindowManager {
     }
 }
 
-function Import-ConfigSet {
-    param([Parameter(Mandatory)][string] $SourceZip)
+# =====================================================================
+# EXPORT — write the whole config set into a fresh directory
+# =====================================================================
 
-    if (-not (Test-Path -LiteralPath $SourceZip)) {
-        throw "The archive does not exist: $SourceZip"
+function Export-ConfigDirectory {
+    param([Parameter(Mandatory)][string] $BackupDir)
+
+    if (-not (Test-Path -LiteralPath $BackupDir)) {
+        New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
+    }
+
+    $count = 0
+    $skipped = @()
+    foreach ($e in (Get-ConfigExportSet)) {
+        if (-not (Test-Path -LiteralPath $e.Live)) {
+            $skipped += (Split-Path $e.Rel -Leaf)
+            continue
+        }
+        # Runtime state: empty means "no resize state", and another machine's
+        # offsets would distort the layout, so it travels only when real.
+        if ($e.OnlyWhenNonEmpty -and ((Get-Item -LiteralPath $e.Live).Length -eq 0)) {
+            Say ("  skipped (empty runtime state): {0}" -f $e.Rel) 'DarkGray'
+            continue
+        }
+        $dest = Join-Path $BackupDir $e.Rel
+        $destDir = Split-Path $dest -Parent
+        if (-not (Test-Path -LiteralPath $destDir)) {
+            New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+        }
+        if ($e.IsDir) {
+            # A directory becomes a whole tree under <rel>\.
+            Copy-Item -LiteralPath $e.Live -Destination $dest -Recurse -Force
+        } else {
+            Copy-Item -LiteralPath $e.Live -Destination $dest -Force
+        }
+        Say ("  added: {0}" -f $e.Rel) 'DarkGray'
+        $count++
+    }
+    if ($skipped.Count -gt 0) {
+        Say ("  skipped (not present): {0}" -f ($skipped -join ', ')) 'DarkGray'
+    }
+
+    Say ("  backup written: {0} ({1} item(s))" -f $BackupDir, $count) 'Green'
+    return $count
+}
+
+# =====================================================================
+# IMPORT — replace the live config from the chosen backup directory
+# =====================================================================
+
+function Import-ConfigDirectory {
+    param([Parameter(Mandatory)][string] $BackupDir)
+
+    if (-not (Test-Path -LiteralPath $BackupDir)) {
+        throw "The backup directory does not exist: $BackupDir"
+    }
+
+    # Refuse a folder that is not a backup at all: the restore REPLACES the
+    # live config, so importing a random directory would silently wipe half
+    # the setup.
+    $missing = @()
+    foreach ($c in (Get-CriticalConfigSet)) {
+        if (-not (Test-Path -LiteralPath (Join-Path $BackupDir $c))) { $missing += $c }
+    }
+    if ($missing.Count -gt 0) {
+        throw ("The chosen folder is not a komorebi backup (missing: {0})" -f ($missing -join ', '))
     }
 
     # --- 1. pre-import backup of the CURRENT live config (always reversible) --
     $preBackup = Join-Path $ConfigHome ('pre-import-backup-{0}' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
     New-Item -ItemType Directory -Path $preBackup -Force | Out-Null
-    foreach ($e in Get-ConfigEntries) {
+    foreach ($e in (Get-ConfigExportSet)) {
+        if ($e.IsDir) { continue }
         if (Test-Path -LiteralPath $e.Live) {
-            Copy-Item -LiteralPath $e.Live -Destination $preBackup -Force -Recurse:$e.IsDir
+            Copy-Item -LiteralPath $e.Live -Destination (Join-Path $preBackup (Split-Path $e.Live -Leaf)) -Force
         }
     }
     Say "  current config backed up to: $preBackup" 'Green'
 
-    # --- 2. read the archive entry names ------------------------------------
-    $archive = [System.IO.Compression.ZipFile]::OpenRead($SourceZip)
-    $entryNames = @()
-    try {
-        $entryNames = $archive.Entries | ForEach-Object { $_.FullName }
-    }
-    finally {
-        $archive.Dispose()
-    }
-    if ($entryNames.Count -eq 0) { throw 'The archive contains no files.' }
-
-    # --- 3. stop the WM, restore every entry, start it again ----------------
+    # --- 2. stop the WM, restore every entry, start it again ----------------
     Say '  stopping the window manager ...' 'Cyan'
     Stop-WindowManager
 
     $restored = 0
     try {
-        $archive = [System.IO.Compression.ZipFile]::OpenRead($SourceZip)
-        try {
-            foreach ($entry in $archive.Entries) {
-                # Directory entries end with '/'; nothing to extract.
-                if ($entry.FullName -match '/$') { continue }
-                $rel = $entry.FullName -replace '/', '\'
-                # komorebi.json lives directly in %USERPROFILE%, not under
-                # .config; every other entry does. Map the top-level names
-                # back to their real home so nothing is restored to the
-                # wrong directory and then silently ignored.
-                $base = if ($entry.FullName -eq 'komorebi.json') { $env:USERPROFILE } else { $ConfigHome }
-                $dest = Join-Path $base $rel
-                $destDir = Split-Path $dest -Parent
+        foreach ($e in (Get-ConfigExportSet)) {
+            $src = Join-Path $BackupDir $e.Rel
+            if (-not (Test-Path -LiteralPath $src)) {
+                if (-not $e.OnlyWhenNonEmpty) {
+                    Say ("  not in backup: {0}" -f $e.Rel) 'DarkGray'
+                }
+                continue
+            }
+            if ($e.IsDir) {
+                # Directory replacement, not a merge: a widget the old config
+                # had and the backup does not must not survive the import.
+                if (Test-Path -LiteralPath $e.Live) {
+                    Remove-Item -LiteralPath $e.Live -Recurse -Force
+                }
+            } else {
+                $destDir = Split-Path $e.Live -Parent
                 if (-not (Test-Path -LiteralPath $destDir)) {
                     New-Item -ItemType Directory -Path $destDir -Force | Out-Null
                 }
-                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $dest, $true)
-                $restored++
-                Say ("  restored: {0}" -f $entry.FullName) 'DarkGray'
             }
-        }
-        finally {
-            $archive.Dispose()
+            Copy-Item -LiteralPath $src -Destination $e.Live -Force -Recurse:$e.IsDir
+            Say ("  restored: {0}" -f $e.Rel) 'DarkGray'
+            $restored++
         }
     }
     finally {
@@ -233,13 +205,13 @@ function Import-ConfigSet {
         Start-WindowManager
     }
 
-    Say ("  import complete: {0} file(s) restored." -f $restored) 'Green'
+    Say ("  import complete: {0} item(s) restored." -f $restored) 'Green'
     Say "  pre-import backup kept at: $preBackup" 'Green'
     return $restored
 }
 
 # =====================================================================
-# Entry point (the CLI form and the GUI form reach this same code)
+# Entry point (the CLI form and the directory selector reach this same code)
 # =====================================================================
 
 if (-not (Test-Path -LiteralPath $ConfigHome)) {
@@ -249,30 +221,35 @@ if (-not (Test-Path -LiteralPath $ConfigHome)) {
 switch ($Action) {
     'export' {
         Say 'Exporting the komorebi configuration ...' 'Cyan'
-        $target = $ZipPath
-        if (-not $target -and -not $NoDialog) {
-            Add-Type -AssemblyName System.Windows.Forms
-            $target = Show-SaveDialog
+        if (-not $BackupPath -and -not $NoDialog) {
+            $picked = Show-DirectorySelector -Description 'Choose the folder to export into. A new komorebi-backup-<date> folder holding your whole configuration will be created inside it.'
+            if (-not $picked) {
+                Say 'Export cancelled - no directory chosen.' 'Yellow'
+                exit 0
+            }
+            $BackupPath = Join-Path $picked ('komorebi-backup-{0}' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
         }
-        if (-not $target) {
-            Say 'Export cancelled - no destination chosen.' 'Yellow'
-            exit 0
+        if (-not $BackupPath) {
+            $BackupPath = Join-Path $ConfigHome ('komorebi-backup-{0}' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
         }
-        Export-ConfigSet -DestinationZip $target | Out-Null
+        Export-ConfigDirectory -BackupDir $BackupPath | Out-Null
     }
 
     'import' {
-        Say 'Importing a komorebi configuration archive ...' 'Cyan'
-        $source = $ZipPath
-        if (-not $source -and -not $NoDialog) {
-            Add-Type -AssemblyName System.Windows.Forms
-            $source = Show-OpenDialog
+        Say 'Importing a komorebi configuration backup ...' 'Cyan'
+        if (-not $BackupPath -and -not $NoDialog) {
+            $picked = Show-DirectorySelector -Description 'Choose the komorebi-backup folder to restore. Its configuration replaces the live one, and a rollback copy of the current configuration is saved first.'
+            if (-not $picked) {
+                Say 'Import cancelled - no directory chosen.' 'Yellow'
+                exit 0
+            }
+            $BackupPath = $picked
         }
-        if (-not $source) {
-            Say 'Import cancelled - no archive chosen.' 'Yellow'
+        if (-not $BackupPath) {
+            Say 'Import skipped - no backup directory chosen.' 'Yellow'
             exit 0
         }
-        Import-ConfigSet -SourceZip $source | Out-Null
+        Import-ConfigDirectory -BackupDir $BackupPath | Out-Null
     }
 }
 
