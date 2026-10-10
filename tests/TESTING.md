@@ -160,6 +160,23 @@ must run in the Sandbox.
 | 07 — export / import (directory selectors) | done | T07.1–T07.4 static PASS (91 assertions) + a full export→mutate→import round trip verified in a sandbox profile |
 | 09 — EXE wrapper + irm install path | done | 40 wrapper assertions (compile + execute against a stub) + 7 irm-E2E assertions, exit 0 on the dev machine |
 
+**Ticket 10 — dashboard shell (`tests/ticket10-dashboard-shell.tests.ps1`, deep-audited 2026-10-10):**
+155 assertions green (includes a real `dotnet build` of the WPF shell; the XAML
+parses; every ADR-0013 verb has a button in exactly one tab; the CLI resolves
+through the same table the GUI binds to). The audit added the missing layer the
+suite never had — **`tests/ticket10-registry-parity.tests.ps1` (11 assertions,
+green, red-tested in both directions)**: both registry tables are parsed
+field-by-field and every load-bearing field of every shared verb (script,
+arguments, requires_admin, help, tab, label, is_read_only, fixed_arguments,
+render_in_gui, hint, action_label, numeric_only) must match. The one
+sanctioned divergence — the Rust table is the actively developed one
+(roadmap Q4: it ships ALONGSIDE the WPF EXE until Phase 4) — is encoded as a
+reviewed, named exemption (`ignore-dashboard`, ticket 03; the export/import/
+demo-stream hint+action copy, ticket 07); any NEW unreviewed Rust-only verb,
+any C#-only verb, and any unreviewed field difference fail the suite. The
+exemption design is what keeps this a drift guard instead of a blanket that
+silences itself over time.
+
 **Ticket 09 — EXE wrapper + the irm path (`tests/ticket09-exe-wrapper.tests.ps1` and
 `tests/ticket09-irm-e2e.tests.ps1`, deep-audited 2026-10-10, session 10):**
 

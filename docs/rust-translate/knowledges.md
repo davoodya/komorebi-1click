@@ -211,6 +211,20 @@ The Dashboard exposes **35** primary verbs organized into tabs:
   future writer of that seam must do the same or the state file and the Startup
   folder disagree (defect R6). Tests assert on the generated VBS, never only on
   the state file.
+* **The two registry tables drift silently unless a parity test reads both.**
+  `src/KomorebiDashboard/Services/VerbRegistry.cs` (WPF) and
+  `src/KomorebiDashboardRust/src-tauri/src/registry.rs` (Rust) are
+  hand-maintained twins: the Rust header says every row was moved by a parser,
+  but that parser is NOT in the repo, so nothing mechanical kept them in step.
+  `tests/ticket10-registry-parity.tests.ps1` now parses both tables and
+  requires field-by-field equality, with a reviewed exemption list for the
+  sanctioned direction (Rust is the active table per roadmap Q4 — it ships
+  alongside the WPF EXE until Phase 4). A new Rust-only verb, a C#-only verb,
+  or an unreviewed field difference now fails. The reviewed list
+  (`ignore-dashboard` since ticket 03; the export/import/demo-stream copy
+  since ticket 07) is the audit's evidence, not a silent allow-list: it was
+  proven by re-running the suite against drifted copies (renamed label, new
+  verb, changed script — all three failed).
 * **Three installer entry points, one code path.** `komorebi-1click-install.exe`
   (csc-built C# wrapper, ticket 09) locates `Install.ps1` next to itself,
   relaunches itself elevated when needed, and forwards the exit code — it is

@@ -312,7 +312,36 @@ If your connection drops, this document alone is enough to continue.
   `docs/rust-translate/knowledges.md` (entry-point pitfall), tracker
   `09-exe-wrapper.md` (audit record).
 
-### 0.8 Session history (compressed, sessions 2–7)
+### 0.8 Ticket 10 deep audit (session 10, 2026-10-10)
+
+* `tests/ticket10-dashboard-shell.tests.ps1`: **155 assertions green** — it
+  really builds the WPF shell, and the ADR-0013 cross-checks (verb set, one
+  button per verb in exactly one tab, CLI resolving through the GUI's table)
+  all pass. No dashboard code changes were needed.
+* **NEW `tests/ticket10-registry-parity.tests.ps1` (11 assertions, green,
+  red-tested against three drifted copies).** The finding: the WPF and Rust
+  registry tables were hand-maintained twins with NO mechanical check between
+  them — the Rust header credits a transfer parser that is not in the repo,
+  so the parity guarantee rested on nobody touching one side. The suite now
+  parses both tables and requires field-by-field equality (script, arguments,
+  requires_admin, help, tab, label, is_read_only, fixed_arguments,
+  render_in_gui, hint, action_label, numeric_only).
+* The sanctioned divergence is encoded, not hidden: roadmap Q4 ships the Rust
+  build ALONGSIDE the WPF EXE until Phase 4, so the Rust table is the active
+  one. `ignore-dashboard` (Rust-only since ticket 03, d64ec0c) and the
+  export/import/demo-stream hint+action copy (Rust-only since ticket 07,
+  5f8bf04) are named in the suite's reviewed-exemption list — a new
+  unreviewed Rust-only verb, a C#-only verb, or any unreviewed field
+  difference fails. **Decision for Davood (in the final report):** catch the
+  WPF table up before the Phase-4 cutover, or retire the exemptions when the
+  WPF EXE stops shipping.
+* Red-test evidence: renamed label / new verb / changed script each failed the
+  suite against a copy; the green run then passed 11/11 on the real files.
+* Docs updated for ticket 10: `tests/TESTING.md` (audit paragraph),
+  `docs/rust-translate/knowledges.md` (twin-tables lesson), tracker
+  `10-dashboard-shell.md` (audit record).
+
+### 0.9 Session history (compressed, sessions 2–7)
 
 * **Session 2 (2026-10-08) — ticket 01.** The Rust + Tauri shell builds and the
   first suites land; artefact `releases/rust/KomorebiDashboard.exe`
