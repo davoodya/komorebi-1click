@@ -278,3 +278,47 @@ The Dashboard exposes **35** primary verbs organized into tabs:
   actually ships) and a working-copy divergence is reported as a loud WARN
   naming the missing binding, never a FAIL and never a silent pass
   (session 8, `tests/ticket05-06-07.tests.ps1`).
+* **A shape guard belongs BEFORE the elevation gate; both belong before the
+  launch.** The Rust core refuses three malformed/missing things per verb with
+  its own exit code (unknown verb 2, missing value 2, missing script 127) and
+  the gate (**740**, the spec's number) last: a malformed request is malformed
+  whatever the process's privilege, so "you must provide a value" is the more
+  specific answer; but a well-formed administrative request must NEVER reach a
+  process launch without passing the gate. Placing the gate between the guards
+  and the launch is what let one pure function serve both the window and the
+  CLI (session 11, `dashboard_core::elevation_gate`,
+  `EXIT_NEEDS_ELEVATION = 740`). The first wiring ordered gate-before-guards
+  and broke `dispatch.rs`'s "uninstall needs a value" test — the suite was
+  right, the order was wrong.
+* **The spec's exit code is the contract, not the neighbouring product's
+  convention.** The first cut used 5, "matching the installer wrapper's
+  elevation refusal" — and two independent reviewers caught it in the same
+  pass: ticket 05, the spec, the roadmap, the codebase inventory and ADR-0017
+  all document **740** for a dashboard dispatch refused for missing
+  elevation, and the installer wrapper's 5 is a different product's number.
+  When implementing against a spec, the spec's documented number is normative;
+  a second convention in the same repo is drift (ADR-0018 §1), however
+  reasonable it looks.
+* **The elevation probe must ASK the OS, and the meeting point between the
+  window's knowledge and the CLI's must be one function.** The Rust twin gates
+  in `dashboard_core::elevation_gate` (pure: `verb.requires_admin && !elevated`)
+  with a thin Windows-only probe (`OpenProcessToken` +
+  `GetTokenInformation(TokenElevation)` behind two `extern "system"`
+  declarations — the same no-windows-crate pattern the console module uses);
+  both the Tauri command and the CLI call the same `run()`, so the dialog's
+  feature list (`adminFeatureNames(registry.verbs)` in TypeScript) and the
+  CLI's exit-5 message (`admin_feature_labels()` in Rust) are generated from
+  the SAME table and can never name different features.
+* **A dialog whose title and buttons are typed into the markup is a second
+  contract.** The Rust dialog renders `ELEVATION_DIALOG_TITLE` /
+  `ELEVATION_DIALOG_BUTTONS` from `src/lib/elevation.ts`, and the static suite
+  (`tests/ticket12-rust-elevation.tests.ps1`) asserts the constants carry the
+  ticket's exact wording — the same strings the WPF-era suite asserts against
+  the WPF build. A rename now fails a test in both suites instead of drifting.
+* **The theme switch is three pure functions plus one attribute set.** Rust's
+  `src/lib/theme.ts` (parse stored / apply / flip) is tested against jsdom
+  with a fake `Storage`, including the corrupted-value case (a junk stored
+  theme must fall back to the documented default, never leave the document
+  unstyled); `applyAppearance` sets `data-theme`/`data-accent` (the exact
+  selectors the CSS declares) plus `color-scheme` for native controls. The
+  WPF build's ThemeService was never the gap; the runtime switch was.

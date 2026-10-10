@@ -35,7 +35,7 @@ changes; the shell does.
 | Icons | Lucide Icons |
 | Components | Hand-built — no component library |
 | Async | `tokio` |
-| Windows API | `windows-sys` / `windows` for token elevation and `ShellExecuteExW` with `runas` |
+| Windows API | token elevation and the elevated relaunch through the same **raw `extern "system"` declarations** the console module already uses (no `windows-sys` / `windows` crate — see the amendment note below); `ShellExecuteW` with `runas` |
 | UI scale | CSS root scale (rem/zoom), verified at 125 % on the portrait monitor |
 | Identity assets | Existing `logo.ico` for app icon, window icon, favicon and the About image |
 | Output | **One EXE** at `H:\Repo\komorebi-1click\releases\rust\`, executable name unchanged |
@@ -48,6 +48,21 @@ changes; the shell does.
    unchanged `.ps1` scripts.
 2. **One registry table** feeding GUI rows, CLI dispatch, `--help` and the elevation dialog's feature
    list (ADR-0013 extension model).
+
+### Amendment (2026-10-10, session 11) — the elevation Windows API row
+
+The shipped implementation reads the process token and performs the elevated
+relaunch through raw `extern "system"` declarations (`OpenProcessToken` +
+`GetTokenInformation(TokenElevation)`, `ShellExecuteW("runas")`), not through
+`windows-sys` / `windows` and not `ShellExecuteExW`. **Reason:** the console
+module in the same binary had already established the raw-extern pattern
+(verified by measurement, no new dependency — the house rule
+"free-first, no new dependency without explicit justification"), and
+`ShellExecuteW`'s sentinel-only answer is sufficient for an action whose only
+outcomes are "relaunched" (the process exits) or "not relaunched" (the window
+stays). The error-contract numbers in this ADR (740 / 2 / 127) are unchanged
+and the implementation matches them; the exit-740 refusal and the token probe
+are covered by `tests/elevation.rs`.
 3. **One executable, two surfaces (ADR-0013):** arguments → headless CLI, no arguments → GUI; exit
    codes 0 / script's own / **740** for missing elevation / **2** parse error / **127** missing script.
 4. **Per-operation elevation (ADR-0012):** start unelevated; gate checked **before** launch; the

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { dispatchVerb } from '../lib/dispatch';
+  import { elevation } from '../lib/elevation.svelte.ts';
   import { filterNumericValue } from '../lib/format';
   import { console_ } from '../lib/console.svelte.ts';
   import type { RowState } from '../lib/rows.svelte.ts';
@@ -39,6 +39,13 @@
         <span class="badge-readonly" title="This verb changes nothing on the system">Read-only</span>
       {/if}
 
+      <!-- Ticket 12: the row carries the registry's own RequiresAdmin flag as
+           a badge, so the elevation dialog is never the first the user hears
+           of a row needing Administrator. -->
+      {#if verb.requiresAdmin}
+        <span class="badge-admin" title="This verb needs an elevated instance">Admin</span>
+      {/if}
+
       {#if row.acceptsValue}
         <input
           class="value-box"
@@ -57,7 +64,7 @@
         class="btn btn-primary"
         type="button"
         disabled={busy}
-        onclick={() => dispatchVerb(verb, row.args())}
+        onclick={() => elevation.request(verb, row.args())}
       >
         {verb.actionLabel || verb.label}
       </button>

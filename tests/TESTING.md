@@ -159,6 +159,8 @@ must run in the Sandbox.
 | 03-followup — dead whkdrc hotkeys | done | T03f.1–T03f.2 (in the static suite and the Sandbox suite) |
 | 07 — export / import (directory selectors) | done | T07.1–T07.4 static PASS (91 assertions) + a full export→mutate→import round trip verified in a sandbox profile |
 | 09 — EXE wrapper + irm install path | done | 40 wrapper assertions (compile + execute against a stub) + 7 irm-E2E assertions, exit 0 on the dev machine |
+| 11 — dashboard threading | done | WPF suite 67 assertions green; **Rust audit (2026-10-10, session 11): no gap** — cargo 30/30 (9 execution-contract assertions), npm 78/78 |
+| 12 — dashboard theming + elevation | done | WPF suite green; **Rust twin implemented (session 11)** — theme.spec.ts 7/7 + elevation.spec.ts 8/8 (vitest), cargo tests/elevation.rs 6/6, `tests/ticket12-rust-elevation.tests.ps1` 25/25 static |
 
 **Ticket 10 — dashboard shell (`tests/ticket10-dashboard-shell.tests.ps1`, deep-audited 2026-10-10):**
 155 assertions green (includes a real `dotnet build` of the WPF shell; the XAML

@@ -1,7 +1,7 @@
 # KomorebiDashboard — Rust Translation · Handoff
 
 > **This is the single continuation document for the next agent.**
-> Read sections 6–9 first; sections 1–5 are background. Last updated: **2026-10-10, after session 8.**
+> Read sections 6–9 first; sections 1–5 are background. Last updated: **2026-10-10, after session 11.**
 > There is exactly one handoff document — `handoff-last-session.md` and
 > `implement/handoff.md` were merged into §0.5 and removed in session 6.
 
@@ -23,7 +23,21 @@ directory selectors instead of ZIP file dialogs, one shared set definition in
 `common.ps1`, both the Dashboard's button script and the standalone tool on the
 same flow, E2E 31/31 in a sandboxed profile, suite 91/91); rebuilt
 `releases\rust\KomorebiDashboard.exe` so its usage advertises `-BackupPath`
-(same size, new hash). The next installer ticket is **`08-ahk-scripts`**.
+(same size, new hash). Session 11 (2026-10-10): per Davood's standing decision
+the **Rust track is the only active build** (WPF catch-ups deferred, recorded in
+`docs/rust-translate/wpf-exemption(Add-Later).md`); **audited installer ticket
+11 (threading) against the Rust core — no gap** (cargo 30/30, npm 78/78, the
+command layer inspected); **implemented ticket 12 (theme + elevation) for the
+Rust twin** — the runtime Dark/Light switch did not exist and the elevation
+gate did not exist; both now exist as one pure gate in the core
+(`elevation_gate` / `EXIT_NEEDS_ELEVATION = 740` / `admin_feature_labels`) shared
+by the window's dialog and the CLI, plus `relaunch_elevated` (ShellExecuteW
+"runas" + exit), an admin badge per row, a "Not elevated" chip, and the
+theme lib/store/toggle (npm 78/78;
+`tests/ticket12-rust-elevation.tests.ps1` 25/25). The Rust EXE in
+`releases/rust/` is now STALE (it predates these features) — its rebuild is
+left to the publish ticket (13). The next installer ticket is
+**`13-dashboard-publish`**.
 Another session is concurrently editing `config/`, `scripts/Install-Common.ps1`,
 `scripts/safe-restart.ps1`, `tests/uia-dump.ps1` and
 `docs/Access-Denied-Solving/` — do not touch those paths.
@@ -340,6 +354,69 @@ If your connection drops, this document alone is enough to continue.
 * Docs updated for ticket 10: `tests/TESTING.md` (audit paragraph),
   `docs/rust-translate/knowledges.md` (twin-tables lesson), tracker
   `10-dashboard-shell.md` (audit record).
+
+### 0.8b Session 11 (2026-10-10) — installer tickets 11 & 12 on the Rust track
+
+**Davood's decision (2026-10-10), standing for this track:** the Rust build is a
+completely independent product from the WPF build — work proceeds on **Rust only**,
+and every WPF catch-up is deferred to a later session and recorded in
+`docs/rust-translate/wpf-exemption(Add-Later).md` (created this session; seeded
+with the current list). The previous session's open question (catch the WPF
+registry table up before the Phase-4 cutover, or retire the exemptions) is
+therefore parked with that document.
+
+* **Ticket 11 (threading) — audit, no code change needed.** The Rust core
+  already implements the whole WPF-era contract: `dashboard_core::execute` with
+  tokio tasks, async drain of both pipes, one `OutputBatch` per ~50 ms window,
+  `request_cancel`, `timeout_for` (300 s default) with tree kill, structured
+  non-zero results. Verified live: `cargo test` 30/30 (9 execution-contract
+  assertions incl. "high line count stays batched, doesn't block"),
+  `npm test` 78/78, `tsc -p tsconfig.json --noEmit` clean. The 300 s default is
+  a property of `timeout_for`, not a live hang — still a Sandbox item (14).
+  Record: tracker `11-dashboard-threading.md` (Rust audit record).
+* **Ticket 12 (theme + elevation) — implemented for the Rust twin.** The theme
+  half existed as tokens/CSS but had NO runtime switch; built `src/lib/theme.ts`
+  (parse/apply/flip, corrupted-value fallback, `data-theme`/`data-accent` +
+  `color-scheme`) + `theme.svelte.ts` + header toggle. The elevation half did
+  not exist at all; built it as ONE gate: `dashboard_core::elevation_gate` +
+  `EXIT_NEEDS_ELEVATION = 740` + `admin_feature_labels()` + `needs_elevation_result`
+  in the core, wired into the shared `run()` AFTER the shape guards (unknown
+  verb 2 / missing value 2 / missing script 127) and before any launch, so the
+  window's dialog and the CLI's refusal are the same decision; the probe is
+  `OpenProcessToken` + `GetTokenInformation(TokenElevation)` via two
+  `extern "system"` decls (no new crate); `relaunch_elevated` shells
+  `ShellExecuteW("runas")` then `exit(0)`. Frontend: `elevation.ts` (pure gate +
+  dialog constants + `adminFeatures`), `elevation.svelte.ts` (store + the one
+  click entry point), `ElevationDialog.svelte` (renders the constants, the
+  generated feature list, declined-UAC error), `badge-admin` on admin rows, a
+  `Not elevated` header chip, `AppInfo.elevated`.
+* **Evidence:** `cargo test` 30/30 (6 new in `tests/elevation.rs`),
+  `npm test` 78/78 (8 + 7 new), `tests/ticket12-rust-elevation.tests.ps1`
+  **25/25** (new static suite; its first cut failed 8 assertions as REGEX
+  faults — fixed the regexes, never the code to match), `tsc` clean,
+  `cargo build` 0. Tracker `12-dashboard-theme-elevation.md` updated with the
+  Rust checkboxes; `knowledges.md` carries five new lessons (guard order,
+  spec's-exit-code-is-the-contract, probe/one-function meeting point, dialog
+  constants, theme purity).
+* **Two-axis code review (Standards + Spec, parallel sub-agents) and what it
+  changed:** (1) the first cut's exit code was **5** "matching the installer
+  wrapper" — both reviewers caught it independently; the spec, roadmap, ADR-0017
+  and ticket 05 all say **740**, and the code now says 740 (ADR-0017's Windows-API
+  row was stale in the other direction too — amended with the raw-externs reason);
+  (2) ticket 05's "declined UAC returns cleanly with no error state" was violated
+  by an error box — the dialog now closes cleanly and OK is acknowledge-and-close
+  (not "attempt the doomed dispatch"); (3) the `relaunch_elevated` comment claimed
+  the sentinel names the declined-prompt case — `ShellExecuteW` cannot know the
+  reason, and the comment now says exactly that; (4) two Middle Men and a
+  duplicated storage key were removed; (5) `elevation.load()` gained one retry so
+  a transient IPC failure cannot pin "unelevated" for a session; (6) the
+  per-row admin badge, the "Not elevated" chip and OK's semantics were scope
+  additions beyond the ticket's letter — kept deliberately (the flag must be
+  discoverable) and recorded in `wpf-exemption(Add-Later).md` as deliberate
+  strengths of the Rust twin.
+* **Not done (boundary, unchanged):** rendered UX — a real click on an admin
+  verb unelevated, the dialog on screen, a declined UAC — is a Sandbox item
+  (ticket 14); the Rust EXE has NOT been rebuilt in the releases folder yet.
 
 ### 0.9 Session history (compressed, sessions 2–7)
 

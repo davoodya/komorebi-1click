@@ -4,11 +4,15 @@
   import TabLayout from './components/TabLayout.svelte';
   import VerbRow from './components/VerbRow.svelte';
   import ConsolePane from './components/ConsolePane.svelte';
+  import ElevationDialog from './components/ElevationDialog.svelte';
   import { console_ } from './lib/console.svelte.ts';
   import { onOutput } from './lib/ipc';
   import { appInfo, type AppInfo } from './lib/ipc';
   import { registry, resolveActiveTab, rowsForTab, tabSelection } from './lib/registry.svelte.ts';
   import { rowsFrom, type RowState } from './lib/rows.svelte.ts';
+  import { theme } from './lib/theme.svelte.ts';
+  import { elevation } from './lib/elevation.svelte.ts';
+  import { adminFeatures } from './lib/elevation';
 
   let info = $state<AppInfo | null>(null);
   let rows = $state<RowState[]>([]);
@@ -31,6 +35,8 @@
 
   onMount(() => {
     void registry.load();
+    theme.load();
+    void elevation.load();
     appInfo()
       .then((value) => (info = value))
       .catch(() => (info = null));
@@ -62,6 +68,19 @@
       <div class="header-meta">
         Komorebi &middot; WHKD &middot; YASB &middot; AutoHotkey &middot; v{version}
       </div>
+    </div>
+
+    <!-- Ticket 12: the elevation state, read from the backend's own probe, is
+         visible before any dialog can explain it — and the theme switch is the
+         runtime Dark/Light toggle. Both are header chrome, so neither can end
+         up duplicated inside a tab. -->
+    <div class="header-controls">
+      {#if elevation.elevated === false}
+        <span class="chip chip-warning" title="Administrative verbs need a relaunch">Not elevated</span>
+      {/if}
+      <button class="btn btn-theme" type="button" onclick={() => theme.toggle()}>
+        {theme.nextLabel}
+      </button>
     </div>
   </header>
 
@@ -105,4 +124,9 @@
     {/if}
     <ConsolePane />
   </TabLayout>
+
+  <!-- Ticket 12: the elevation dialog. Its feature list is generated from the
+       registry rows that carry RequiresAdmin — the same names the backend's
+       refusal message carries — so the two can never name different things. -->
+  <ElevationDialog features={adminFeatures(registry.verbs)} />
 </div>

@@ -69,6 +69,13 @@ export interface AppInfo {
   version: string;
   gitSha: string;
   scriptsPath: string;
+  /**
+   * This process's elevation state, measured by the backend's own token probe
+   * rather than guessed here. The shell gates administrative rows with it; a
+   * second reading in the frontend could only ever disagree with the gate the
+   * backend enforces.
+   */
+  elevated: boolean;
 }
 
 /** The event channel the backend streams batches on. */
@@ -99,6 +106,18 @@ export function listTabs(): Promise<TabDefinition[]> {
 
 export function appInfo(): Promise<AppInfo> {
   return invoke<AppInfo>('app_info');
+}
+
+/**
+ * Ask the backend to relaunch this executable elevated (ticket 12).
+ *
+ * Resolves only when the relaunch could NOT start — a declined UAC prompt is
+ * the normal cause and arrives as an error string to show in the dialog. On
+ * success the backend exits this process itself, so there is no "after" to
+ * handle: the new elevated instance is simply the next thing that runs.
+ */
+export function relaunchElevated(): Promise<void> {
+  return invoke<void>('relaunch_elevated');
 }
 
 /**

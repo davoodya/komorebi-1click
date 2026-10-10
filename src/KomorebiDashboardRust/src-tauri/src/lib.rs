@@ -299,6 +299,153 @@ fn powershell() -> PathBuf {
         .join("System32/WindowsPowerShell/v1.0/powershell.exe")
 }
 
+// ---------------------------------------------------------------------------
+// Elevation (ticket 12)
+//
+// One gate, decided in one place, used by both consumers of `run`: the
+// window's dispatch (which shows the relaunch dialog instead of invoking) and
+// the CLI (which refuses with a structured result instead of launching a
+// script that cannot do its job unelevated). The WPF build enforced this in
+// its own dispatcher; the twins agreeing here is what keeps them from
+// disagreeing about which verbs are gated.
+// ---------------------------------------------------------------------------
+
+/// Exit code for "this verb needs Administrator and this process is not
+/// elevated". Its own code, because it is a statement about the process, not
+/// a verdict about the script: every code a script can produce is still
+/// meaningful, and this one is never one of them. **740**, as ticket 05, the
+/// spec, the roadmap and ADR-0017 all mandate — the installer wrapper's 5 is
+/// a different product's convention and deliberately NOT copied here: the
+/// one place the dashboard's exit codes are documented is the Rust-track
+/// spec, and a second convention would be exactly the drift ADR-0018 §1
+/// exists to prevent.
+pub const EXIT_NEEDS_ELEVATION: i32 = 740;
+
+/// The gate's answer. Pure over `(verb, elevated)` so the logic is testable
+/// on any machine; the platform probe is the only part that touches Windows.
+pub enum ElevationGate {
+    /// Nothing to gate: this process may run the verb.
+    Allowed,
+    /// The verb needs Administrator this process does not have.
+    NeedsRelaunch { features: Vec<String> },
+}
+
+/// Decide whether `verb` may run in a process whose elevation state is
+/// `elevated`.
+pub fn elevation_gate(verb: &Verb, elevated: bool) -> ElevationGate {
+    if verb.requires_admin && !elevated {
+        ElevationGate::NeedsRelaunch {
+            features: admin_feature_labels(),
+        }
+    } else {
+        ElevationGate::Allowed
+    }
+}
+
+/// The features the elevation dialog names: every registry row that needs
+/// Administrator, by its button label, in table order, deduplicated.
+///
+/// Generated from the table on purpose. A list typed into the dialog (or into
+/// the CLI) would be the second copy of the registry's flags that ADR-0013
+/// exists to prevent, and the ticket names this failure mode explicitly: the
+/// message must name the specific features, generically is not good enough.
+pub fn admin_feature_labels() -> Vec<String> {
+    let mut labels: Vec<String> = Vec::new();
+    for verb in registry::registry() {
+        if verb.requires_admin && !labels.iter().any(|label| label == verb.label) {
+            labels.push(verb.label.to_string());
+        }
+    }
+    labels
+}
+
+/// The structured refusal for a gated verb. No process is launched, no
+/// timeout is spent: the answer names the features and the way out, and
+/// carries [`EXIT_NEEDS_ELEVATION`] so a caller can tell it from a script
+/// failure without parsing prose.
+pub fn needs_elevation_result(verb: &Verb, run_id: &str) -> ScriptResult {
+    ScriptResult::error(
+        verb.verb,
+        run_id,
+        EXIT_NEEDS_ELEVATION,
+        format!(
+            "'{verb}' needs Administrator and this instance is not elevated.\n\
+             Features that need Administrator: {features}.\n\
+             Rerun the dashboard as Administrator, or run '{verb}' from an elevated shell.",
+            verb = verb.verb,
+            features = admin_feature_labels().join(", "),
+        ),
+    )
+}
+
+/// True when this process holds an elevated (administrative) token.
+///
+/// Windows asks the token directly — `OpenProcessToken` on the current
+/// process, then `GetTokenInformation` for the elevation flag — which is the
+/// same measurement the WPF build recorded. The unsafe surface is exactly the
+/// three API calls and a 4-byte out buffer; everything a test asserts lives
+/// in the pure gate above.
+#[cfg(windows)]
+pub fn is_elevated() -> bool {
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn OpenProcessToken(
+            process: *mut core::ffi::c_void,
+            access: u32,
+            token: *mut *mut core::ffi::c_void,
+        ) -> i32;
+        fn GetTokenInformation(
+            token: *mut core::ffi::c_void,
+            class: u32,
+            info: *mut core::ffi::c_void,
+            length: u32,
+            out_length: *mut u32,
+        ) -> i32;
+        fn CloseHandle(handle: *mut core::ffi::c_void) -> i32;
+    }
+
+    const TOKEN_QUERY: u32 = 0x0008;
+    /// TokenElevation: the TOKEN_ELEVATION information class.
+    const TOKEN_ELEVATION: u32 = 20;
+    #[repr(C)]
+    struct TokenElevation {
+        token_is_elevated: i32,
+    }
+
+    unsafe {
+        let mut token: *mut core::ffi::c_void = core::ptr::null_mut();
+        // (HANDLE)-1 is the current process pseudo-handle.
+        if OpenProcessToken(
+            -1isize as *mut core::ffi::c_void,
+            TOKEN_QUERY,
+            &mut token,
+        ) == 0
+        {
+            return false;
+        }
+        let mut elevation = TokenElevation {
+            token_is_elevated: 0,
+        };
+        let mut returned: u32 = 0;
+        let ok = GetTokenInformation(
+            token,
+            TOKEN_ELEVATION,
+            &mut elevation as *mut TokenElevation as *mut core::ffi::c_void,
+            core::mem::size_of::<TokenElevation>() as u32,
+            &mut returned,
+        );
+        CloseHandle(token);
+        ok != 0 && elevation.token_is_elevated != 0
+    }
+}
+
+/// The crate ships on Windows; elsewhere there is no privilege split to
+/// answer for and the gate has nothing to refuse.
+#[cfg(not(windows))]
+pub fn is_elevated() -> bool {
+    true
+}
+
 async fn drain<R: AsyncRead + Unpin>(
     reader: R,
     stream: &'static str,
@@ -424,6 +571,17 @@ pub async fn run<F: FnMut(OutputBatch)>(
             127,
             format!("Script not found: {}", script.display()),
         );
+    }
+    // The elevation gate, last of the refusals and the first that could not be
+    // answered without asking the OS: by this point the request is well-formed
+    // and the script exists, so the only thing standing between this dispatch
+    // and a launch is the process's privilege. Refused HERE, as a structured
+    // result naming the affected features, rather than run into a permission
+    // error after the child has already started. The window normally never
+    // reaches this (its dialog intercepts the click); the CLI always does, and
+    // this is what stops it from silently doing nothing.
+    if let ElevationGate::NeedsRelaunch { .. } = elevation_gate(&verb, is_elevated()) {
+        return needs_elevation_result(&verb, run_id);
     }
     let outcome = execute(&script, verb, arguments, budget, run_id, emit).await;
     // Read the verdict before moving the outcome's fields into the result.

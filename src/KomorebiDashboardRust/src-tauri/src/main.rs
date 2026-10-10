@@ -34,7 +34,73 @@ fn list_tabs() -> &'static [Tab] {
 #[tauri::command]
 fn app_info(state: tauri::State<'_, AppState>) -> serde_json::Value {
     serde_json::json!({"product":"Komorebi Admin Dashboard", "version":env!("CARGO_PKG_VERSION"),
-        "gitSha":option_env!("DASHBOARD_GIT_SHA").unwrap_or("development"), "scriptsPath":state.scripts})
+        "gitSha":option_env!("DASHBOARD_GIT_SHA").unwrap_or("development"), "scriptsPath":state.scripts,
+        // The elevation state arrives with the info so the shell can gate the
+        // administrative rows the same way the backend does — one registry
+        // flags reading, one answer, no second probe.
+        "elevated": dashboard_core::is_elevated()})
+}
+/// Relaunch this executable elevated (the `runas` verb) and exit.
+///
+/// This is the dialog's "Rerun as Administrator" action, and it is the whole
+/// mechanism: the elevation prompt is the OS's, the current instance exits
+/// immediately so there is never a second window serving the same config, and
+/// the new process reads its own elevated state through `app_info` like any
+/// other start.
+///
+/// A declined prompt (UAC says no) is a normal outcome: the call comes back as
+/// an `Err`, this process stays alive, and the window remains — the ticket's
+/// contract is exactly that ("returns cleanly to the unelevated window with no
+/// error state"), which the frontend honours by simply closing the dialog.
+#[cfg(windows)]
+#[tauri::command]
+fn relaunch_elevated() -> Result<(), String> {
+    #[link(name = "shell32")]
+    extern "system" {
+        fn ShellExecuteW(
+            hwnd: *mut core::ffi::c_void,
+            operation: *const u16,
+            file: *const u16,
+            parameters: *const u16,
+            directory: *const u16,
+            show_command: i32,
+        ) -> *mut core::ffi::c_void;
+    }
+
+    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+    let wide = |text: &str| -> Vec<u16> { text.encode_utf16().chain(core::iter::once(0)).collect() };
+    let (file, verb) = (wide(&executable.to_string_lossy()), wide("runas"));
+    let result = unsafe {
+        ShellExecuteW(
+            core::ptr::null_mut(),
+            verb.as_ptr(),
+            file.as_ptr(),
+            core::ptr::null(),
+            core::ptr::null(),
+            1, // SW_SHOWNORMAL
+        )
+    };
+    // ShellExecuteW returns a value GREATER THAN 32 on success; anything at or
+    // below 32 is a failure sentinel (SE_ERR_*). The sentinel family cannot say
+    // WHY the launch failed — a declined UAC prompt and an out-of-memory both
+    // land here — so this code deliberately does not claim a reason: the only
+    // distinction it makes is "a new process was launched", which is the one
+    // fact the caller acts on (success exits this process; anything else lets
+    // the window stay up). `ShellExecuteExW` + `GetLastError` would give the
+    // reason, and is not worth the extra surface for an action whose only
+    // outcomes are relaunched or not.
+    if result as usize <= 32 {
+        return Err("The elevated relaunch did not start (the elevation prompt was declined, or Windows could not launch the new instance).".into());
+    }
+    std::process::exit(0);
+}
+
+/// Non-Windows: nothing to elevate into, so the dialog's action is a
+/// deliberate no-op reported as one.
+#[cfg(not(windows))]
+#[tauri::command]
+fn relaunch_elevated() -> Result<(), String> {
+    Err("Elevated relaunch is only available on Windows.".into())
 }
 /// Stop a live run.
 ///
@@ -219,7 +285,7 @@ fn main() {
             busy: AtomicBool::new(false),
         })
         .invoke_handler(tauri::generate_handler![
-            list_verbs, list_tabs, app_info, run_verb, cancel_run
+            list_verbs, list_tabs, app_info, run_verb, cancel_run, relaunch_elevated
         ])
         .run(tauri::generate_context!())
         .expect("Dashboard runtime failed");
