@@ -1,18 +1,24 @@
 # KomorebiDashboard — Rust Translation · Handoff
 
 > **This is the single continuation document for the next agent.**
-> Read sections 6–9 first; sections 1–5 are background. Last updated: **2026-10-10, after session 5.**
+> Read sections 6–9 first; sections 1–5 are background. Last updated: **2026-10-10, after session 6.**
+> There is exactly one handoff document — `handoff-last-session.md` and
+> `implement/handoff.md` were merged into §0.3 and removed in session 6.
 
 ---
 
 ## 0. One-line status
 
-Tickets `01`, `02`, `03` are **implemented, verified, and committed**
-(`5df6f6d` for the session-4 documents, `d64ec0c` for ticket 03). The next ticket
-is **`04-eight-tabs`**. Nothing is mid-edit; every suite was re-measured green at
-the start of session 5, the only known gap is a host capability (ConPTY), not a
-code defect, and the installer track's ticket `04-startup-tasks` was audited
-against the live machine with two genuine gaps fixed (see §0.1).
+The Rust track's tickets `01`, `02`, `03` are **implemented, verified, and
+committed** (`5df6f6d` session-4 documents, `d64ec0c` ticket 03, `beec3f2`
+installer fixes — all pushed with session 6). The next ticket is
+**`04-eight-tabs`** (Rust track). Session 6 audited the installer track's
+tickets `04-startup-tasks` and `05-autohotkey-vbs` end-to-end on the live
+machine, closed both, and fixed one genuine defect in ticket 05's regenerate
+seam (§0.2). Nothing is mid-edit; the only known gap is a host capability
+(ConPTY), not a code defect. Another session is concurrently editing
+`config/`, `scripts/step5/` and `docs/Access-Denied-Solving/` — do not touch
+those paths.
 
 If your connection drops, this document alone is enough to continue.
 
@@ -42,6 +48,88 @@ If your connection drops, this document alone is enough to continue.
   `~/.scratch/komorebi-1click-installer/issues/04-startup-tasks.md`.
 * **US 55's delivery proof still SKIPs** on this ConPTY host — measured again
   this session, unchanged, and still a SKIP rather than a fake pass (§8).
+
+### 0.2 Session 6 (2026-10-10) — installer tickets 04 and 05 verified and closed; one defect fixed
+
+* **Ticket `04-startup-tasks` (installer track)** — audited against the live
+  machine, all 13 boxes re-proven read-only: both scheduled tasks exist with
+  `RunLevel=Highest`, correct actions and triggers (`komorebic.exe start --whkd`
+  on logon for `Komorebi`; the windowless launcher → `komorebi-service.ps1
+  -Action watchdog -WatchdogMinutes 5` on a 5-minute time trigger for
+  `KomorebiWatchdog`), `komorebic` on the machine PATH, YASB autostart via its
+  own HKCU Run key, `-Action status` HEALTHY for all three. The session-5
+  fixes are confirmed in place (unelevated `-Action install` now refuses before
+  any side effect; `-Action status` reports YASB). The `Global\komorebi-service-start`
+  mutex and the both-streams redirection are preserved on every restart path.
+  Nothing was left to implement; the tracker now records
+  `implemented-and-pushed`.
+* **Ticket `05-autohotkey-vbs` (installer track)** — verified end-to-end on the
+  live machine: the real Startup `AppRunner.vbs` is **byte-identical** to what
+  the shipped generator produces from the template and `autohotkey\` dir
+  (`Test-AppRunnerUpToDate` returns True, so re-running correctly skips), it
+  contains exactly three `RunHidden` lines and zero `RunNormal` lines, uses the
+  v1 interpreter for `autocorrect.ahk` and `ChangeLangF3.ahk` and the v2
+  interpreter for `NewFile.ahk`, and two `AutoHotkey.exe` (v1) plus one
+  `AutoHotkey64.exe` (v2) process are running from `autohotkey\`.
+* **Defect R6 found and fixed** (`bugs-fixing.md` §3.6):
+  `Set-AhkEnabledState` persisted `ahk-state.json` but rendered the Startup VBS
+  from the in-memory manifest without applying the new state first — so
+  `ahk-toggle -State disabled` killed the scripts while the regenerated VBS
+  kept them live, and all three returned at the next logon. The ticket-08
+  tests had passed through the hole because their section 3 round-tripped only
+  the state file, never the generated file. Fixed by applying the state before
+  rendering; the hole is closed by two assertions that inspect the generated
+  VBS (19/19 green).
+* **The working tree is shared with another session.** `config/applications.json`,
+  `config/config.yaml`, `config/whkdrc`, `scripts/safe-restart.ps1`,
+  `config/backup-last/`, `config/backup-2026-10-10/`, `scripts/step5/` and
+  `docs/Access-Denied-Solving/` belong to that session — untouched. Their
+  in-flight `whkdrc` edit is also why one T03-followup assertion in
+  `tests/ticket05-06-07.tests.ps1` (the `alt+ctrl+shift+r` binding to
+  `safe-restart.ps1`, which the committed `config/whkdrc` still binds) fails
+  against the working tree: committed at the time it was written, theirs to
+  reconcile. Session-6 commits use explicit pathspecs so none of those entries
+  enter them.
+* **One handoff document.** Per Davood, `handoff-last-session.md` and
+  `implement/handoff.md` were merged into this document (§0.3) and removed.
+  Do not create a second handoff document.
+
+### 0.3 Session history (compressed, sessions 2–5)
+
+* **Session 2 (2026-10-08) — ticket 01.** The Rust + Tauri shell builds and the
+  first suites land; artefact `releases/rust/KomorebiDashboard.exe`
+  (6,420,992 bytes). Commits pushed to `origin/main`.
+* **Session 2b (2026-10-08) — ticket 02 (`02-execution-contract`).** The
+  backend that observes a stop now records `cancelled` / `timedOut` on the
+  result instead of deriving a verdict from exit codes 130/124, and cancellation
+  reaches a live run through a per-run-id sender registry. A clean-checkout
+  proof is part of its record — and it must be run **on Windows**, not from
+  WSL, or it verifies nothing about the shipped artefact.
+* **Session 3 (2026-10-09) — ticket 03 (`03-registry-cli-twin`).** The
+  35-verb registry (`registry.rs`) becomes the single source of truth, the CLI
+  twin dispatches from it, `TABS` and `list_tabs` are served over IPC, and
+  US 55 (Ctrl+C cancels the child) is implemented. R1/R2 are fixed here. The
+  guard order inside `run()` is load-bearing and must not be reordered:
+  (1) unknown verb → 2; (2) `ahk` two-part fold; (3) read the budget;
+  (4) strip `-TimeoutSeconds`; (5) a verb declaring a **required** value sent
+  bare → 2; (6) a verb declaring **no** value given one → 2; (7) missing
+  script → 127; (8) dispatch. Steps 5 and 6 must stay **after** step 4, or a
+  legitimate `-TimeoutSeconds` is refused as a script argument. Ticket 04 was
+  deliberately left to render one tab until this ticket landed.
+* **Session 4 (2026-10-10) — Davood's two ticket-02 decisions, applied as
+  ADRs.** Cheatsheets: **bilingual** (ADR-0020) — `fa/` authoritative, `en/`
+  translated, hotkeys and commands copied verbatim; all 158 hotkey/command
+  pairs verified identical, the English file carries zero Arabic-script
+  characters, and the Jalali change-log dates stay authoritative. Thresholds:
+  **dual-mode** (ADR-0019) — strict default (the only mode a release may pass),
+  relaxed opt-in. `DASHBOARD_THRESHOLD_MODE` does not cross the WSL→Windows
+  boundary, so pass `-ThresholdMode` explicitly from WSL. **Deferred, large
+  reference documents, still untranslated:** `komorebi-configuration.md`
+  (61 KB), `komorebi-debugging.md` (91 KB), and
+  `Komorebi-Hotkey-Cheatsheet.md` (59 KB — deprecated, carries a redirect
+  header, needs no translation).
+* **Session 5 (2026-10-10)** — see §0.1: ticket 03 committed, defect R5 fixed,
+  installer ticket 04 audited with the two legacy-path gaps closed.
 
 ---
 
@@ -468,15 +556,21 @@ NEW
 session-4 documents: ADR-0019, ADR-0020, the session-4 log, the dual-mode probe)
 and `d64ec0c` (the registry, the CLI twin, their tests, the ticket-03 docs).
 Session 5's installer-track fixes landed separately in `beec3f2`
-(`scripts/komorebi-service.ps1`, both `SCRIPTS-GUIDE` files), and this handoff's
-own update lands in the commit that carries it. All are on `main`, unpushed.
+(`scripts/komorebi-service.ps1`, both `SCRIPTS-GUIDE` files). Session 6's
+defect R6 fix (`scripts/Install-Common.ps1`,
+`tests/ticket08-ahk.tests.ps1`) and the document work that carries this
+paragraph land in the commit that carries it — the first session to push all of
+them to `origin/main`.
 
 Pre-existing dirty entries that are **not** this work and must not be committed
-with it: `config/komorebi.json`, `scripts/safe-restart.ps1`, the two
-`docs/HANDOFF-*` deletions, `config/mini_asc.json`,
-`scripts/safe-restart-backup-full.ps1`, `scripts/safe-restart-v1.ps1`,
-`tests/uia-dump.ps1`, `backup/`, `docs/Access-Denied-Solving/`,
-`docs/rust-translate/prompt.md`, and the `config/last-backup/` deletions.
+with it — most now belong to the other session working this tree concurrently:
+`config/komorebi.json`, `scripts/safe-restart.ps1`, `config/applications.json`,
+`config/config.yaml`, `config/whkdrc`, the two `docs/HANDOFF-*` deletions,
+`config/mini_asc.json`, `scripts/safe-restart-backup-full.ps1`,
+`scripts/safe-restart-v1.ps1`, `tests/uia-dump.ps1`, `backup/`,
+`config/backup-last/`, `config/backup-2026-10-10/`, `scripts/step5/`,
+`docs/Access-Denied-Solving/`, `docs/rust-translate/prompt.md`, and the
+`config/last-backup/` deletions. Use explicit pathspecs when committing.
 
 ---
 
@@ -543,6 +637,12 @@ Before writing any code:
     detail for the ticket you are on
 
 Then: re-verify the baseline (§6), and only then start the ticket.
+
+**One handoff document.** This file is the only continuation document.
+`handoff-last-session.md` and `implement/handoff.md` were merged into §0.3 and
+removed in session 6 at Davood's instruction; `implement/BUILD-CHECKLIST.md`
+remains as the build and verification contract, not as a handoff. Update this
+document alone when a session ends, and never leave a second entry log behind.
 
 ### Where everything lives
 

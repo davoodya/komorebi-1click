@@ -202,15 +202,39 @@ This document aggregates and synthesizes all defects, architectural traps, edge 
   `exit 0, 190 files`. Re-running it in the next session — before touching any
   code — produced `exit 1, 194 files`: three lines failed with Arabic-script
   codepoints (U+06F1, the Persian digit one).
-- **Root Cause:** The session-4 documents (`handoff-last-session.md` line 107,
-  `ADR-0020-bilingual-cheatsheets.md` lines 43-44) illustrated the
-  Jalali→Gregorian date conversion with the Jalali date written in Persian
-  digit codepoints (U+06F0..U+06F9) instead of ASCII digits. The
-  checker scans the docs, not only the shipped UI text, and the recorded
-  baseline predated the new files — so the claim was stale, not measured.
+- **Root Cause:** The session-4 documents (the session-4 log line, now
+  `handoff.md` §0.3, and `ADR-0020-bilingual-cheatsheets.md` lines 43-44)
+  illustrated the Jalali→Gregorian date conversion with the Jalali date
+  written in Persian digit codepoints (U+06F0..U+06F9) instead of ASCII
+  digits. The checker scans the docs, not only the shipped UI text, and the
+  recorded baseline predated the new files — so the claim was stale, not
+  measured.
 - **Fix & Invariant:** The illustrative dates now use ASCII digits
   (`1405/07/09` = 2026-10-01); the suite passes again (194 files, exit 0).
   **A baseline is a measurement with a timestamp, not a status to copy
   forward.** After adding or editing any document, re-run
   `check-shipped-text.mjs` before claiming a green baseline — Persian digits are
   foreign script exactly like Persian letters (ADR-0017 rule 7).
+
+### 3.6 The Persisted State and the Rendered Startup Disagreed (Defect R6, session 6, installer ticket 05)
+
+- **Symptom:** `ahk-toggle.ps1 -State disabled` killed the AutoHotkey processes
+  and wrote `autohotkey\ahk-state.json` correctly, but the regenerated
+  `AppRunner.vbs` still carried every script as a live `RunHidden` line — so a
+  machine that disabled a script had it silently back at the next logon.
+- **Root Cause:** `Set-AhkEnabledState` in `scripts/Install-Common.ps1` wrote
+  the state file and then called `New-AppRunnerVbs`, which renders from the
+  in-memory `$script:AutoHotkeyScripts` manifest. Nothing applied the new state
+  to that manifest first. The installer path (`Install-AutoHotkeyStartup`) was
+  correct because it calls `Apply-AhkEnabledState` before rendering; the toggle
+  path bypassed it, so the file and the artefact disagreed. The ticket-08 tests
+  passed through the hole because their section 3 round-tripped the state file
+  and never inspected the generated VBS — persistence is not the product.
+- **Fix & Invariant:** `Set-AhkEnabledState` now calls
+  `Apply-AhkEnabledState -RepoRoot $RepoRoot` after writing the file and before
+  rendering, and `tests/ticket08-ahk.tests.ps1` gained two assertions that read
+  the generated file — `the regenerated VBS comments out the disabled script`
+  and `the regenerated VBS keeps the re-enabled script live` (19/19 green, and
+  the two new assertions fail against the pre-fix code). **When persisted state
+  drives a generated artefact, the test must read the artefact, not the
+  state.**

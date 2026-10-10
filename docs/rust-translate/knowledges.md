@@ -188,6 +188,18 @@ The Dashboard exposes **35** primary verbs organized into tabs:
   of registering Medium-integrity tasks (ADR-0016), and `-Action status`
   reports YASB and its autostart entry next to komorebi and whkd. See
   `bugs-fixing.md` §1.9.
+* **The AutoHotkey startup is generated, never copied.** `autohotkey\AppRunner.vbs`
+  is a template with no machine paths; `Get-GeneratedAppRunnerContent` renders
+  it into `%APPDATA%\...\Startup\AppRunner.vbs` with three `RunHidden` lines
+  (mode 0, hidden) — v1 interpreter for `autocorrect.ahk` and `ChangeLangF3.ahk`,
+  v2 interpreter for `NewFile.ahk` — and `Test-AppRunnerUpToDate` makes a
+  re-run skip when the file already matches.
+* **Persisted state must be layered onto the manifest before any render.**
+  `Set-AhkEnabledState` (Install-Common.ps1) writes `autohotkey\ahk-state.json`
+  and regenerates the Startup VBS through `Apply-AhkEnabledState` first; any
+  future writer of that seam must do the same or the state file and the Startup
+  folder disagree (defect R6). Tests assert on the generated VBS, never only on
+  the state file.
 * **The build host is Windows**: `cargo`/`npm` run through `win-exec.sh` with
   `ALLOW_WINDOWS=1` from WSL; a WSL-native build is not the contract. The
   wrapper has no console, which is why console-control-event tests SKIP there

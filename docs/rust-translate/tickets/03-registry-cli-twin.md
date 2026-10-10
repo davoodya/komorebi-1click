@@ -15,7 +15,7 @@ test seam.
 > plus 4 CLI-only). All seven criteria below are met except where noted for US 55, whose
 > *delivery* could not be proven on this host (a ConPTY pseudo-console cannot receive a console
 > control event — measured, four topologies, reported as SKIP not as a pass).
-> Evidence: `docs/rust-translate/implement/handoff.md`, session 3.
+> Evidence: `docs/rust-translate/handoff.md` §0.3 (session 3), this ticket.
 
 - [x] All **35** verbs are registered, each grouped under exactly one of the eight tabs
 - [x] Every declared verb resolves to an existing script file; no verb leaves the registry to find its script
