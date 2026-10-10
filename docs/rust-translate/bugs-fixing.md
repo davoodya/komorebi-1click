@@ -48,6 +48,35 @@ This document aggregates and synthesizes all defects, architectural traps, edge 
   2. DPI scaling differences (e.g. 125% scale on portrait monitor) cause WinForms logical bounds to differ from physical pixels.
 - **Invariant:** Query per-monitor DPI through Device Contexts; do not flag zero-size containers or empty workspace names as errors.
 
+### 1.9 The Startup Machinery Existed Twice, and the Second Copy Was Weaker (fixed session 5, installer ticket 04)
+
+- **Symptom:** `2-ADD-TO-STARTUP.bat` → `komorebi-service.ps1 -Action install`
+  registered the `Komorebi` and `KomorebiWatchdog` scheduled tasks at
+  `-RunLevel Highest` **only when the shell was already elevated**. From an
+  unelevated shell it silently registered Medium-integrity tasks — exactly the
+  delayed regression ADR-0016 exists to prevent (elevated windows become
+  unmanageable, and only *after* the first watchdog respawn drops Komorebi back
+  to Medium integrity). On this host (`DavoodYa` is a standard user) that path
+  always produced the broken state. The legacy action also never set up YASB
+  autostart or the `komorebic` PATH entry, so it was a partial duplicate of the
+  canonical machinery. Separately, `-Action status` reported komorebi and whkd
+  but had zero YASB awareness, while its ticket requires status to confirm
+  **all three** are running.
+- **Fix & Invariant:** `-Action install` now refuses **before** it builds or
+  registers anything when the shell is unelevated, naming the elevated entry
+  points (the EXE wrapper, `Install.ps1` via "Run as administrator"); the
+  unelevated fallback branch is deleted, so the task is registered Highest
+  unconditionally. `Get-Health`/`Show-Status` gained `Yasb`, `YasbUptime` and
+  `YasbAutostart` (Run key or Startup shortcut — the same test
+  `Install-Common.ps1` performs), and a missing bar or autostart entry counts as
+  a problem. Verified by parser (0 errors), a live read-only `-Action status`
+  (yasb `True`, autostart `True`, verdict HEALTHY), and a live unelevated
+  `-Action install` that threw the refusal and touched nothing.
+- **General rule:** two code paths implementing the same machinery diverge
+  silently, and the weaker one is exactly what a user finds first. One canonical
+  implementation (`Install-StartupTasks`) plus a loudly failing duplicate is
+  safer than a "compatible" second copy.
+
 ---
 
 ## 2. WPF / .NET Dashboard Historical Deficiencies & Lessons
@@ -166,3 +195,22 @@ This document aggregates and synthesizes all defects, architectural traps, edge 
 - **General rule:** A placeholder that happens to be correct for the sample size is
   not correct — when the real data arrives, re-read every placeholder that returned
   "all of it" and ask which subset it was actually standing in for.
+
+### 3.5 A "Green Baseline" Was Copied Forward Past Its Own Regression (Defect R5, session 5)
+
+- **Symptom:** The handoff recorded `tests/check-shipped-text.mjs` as
+  `exit 0, 190 files`. Re-running it in the next session — before touching any
+  code — produced `exit 1, 194 files`: three lines failed with Arabic-script
+  codepoints (U+06F1, the Persian digit one).
+- **Root Cause:** The session-4 documents (`handoff-last-session.md` line 107,
+  `ADR-0020-bilingual-cheatsheets.md` lines 43-44) illustrated the
+  Jalali→Gregorian date conversion with the Jalali date written in Persian
+  digit codepoints (U+06F0..U+06F9) instead of ASCII digits. The
+  checker scans the docs, not only the shipped UI text, and the recorded
+  baseline predated the new files — so the claim was stale, not measured.
+- **Fix & Invariant:** The illustrative dates now use ASCII digits
+  (`1405/07/09` = 2026-10-01); the suite passes again (194 files, exit 0).
+  **A baseline is a measurement with a timestamp, not a status to copy
+  forward.** After adding or editing any document, re-run
+  `check-shipped-text.mjs` before claiming a green baseline — Persian digits are
+  foreign script exactly like Persian letters (ADR-0017 rule 7).

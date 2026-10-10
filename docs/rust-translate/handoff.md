@@ -1,17 +1,47 @@
 # KomorebiDashboard — Rust Translation · Handoff
 
 > **This is the single continuation document for the next agent.**
-> Read sections 6–9 first; sections 1–5 are background. Last updated: **2026-10-10, after ticket 03.**
+> Read sections 6–9 first; sections 1–5 are background. Last updated: **2026-10-10, after session 5.**
 
 ---
 
 ## 0. One-line status
 
-Tickets `01`, `02`, `03` are **implemented and verified**. The next ticket is
-**`04-eight-tabs`**. Nothing is mid-edit; the tree compiles, every suite is green,
-and the only known gap is a host capability (ConPTY), not a code defect.
+Tickets `01`, `02`, `03` are **implemented, verified, and committed**
+(`5df6f6d` for the session-4 documents, `d64ec0c` for ticket 03). The next ticket
+is **`04-eight-tabs`**. Nothing is mid-edit; every suite was re-measured green at
+the start of session 5, the only known gap is a host capability (ConPTY), not a
+code defect, and the installer track's ticket `04-startup-tasks` was audited
+against the live machine with two genuine gaps fixed (see §0.1).
 
 If your connection drops, this document alone is enough to continue.
+
+### 0.1 Session 5 (2026-10-10) — what changed since the ticket-03 landing
+
+* **Baseline re-measured from scratch on the Windows host** (§6 is the contract):
+  cargo 24, npm check 0 + test 49, ticket03-interrupt 8 passed + 1 honest SKIP,
+  ticket01-cli 6/6, ticket02-probe 26/26 strict, shipped-text 194 files clean.
+  One regression was found on the way in — `check-shipped-text.mjs` had been
+  *recorded* green but actually failed (Persian digits in the session-4 docs).
+  Fixed, re-run clean, and recorded as defect R5 in `bugs-fixing.md`: a baseline
+  is a measurement, not a copy-forward.
+* **Ticket 03 is committed** (`d64ec0c`, 22 files; the session-4 documents in
+  `5df6f6d`, 4 files), scoped by pathspec so no pre-existing dirty entry entered
+  either commit. The tracker boxes were ticked in both the dev mirror and the
+  publish copy (they had drifted: the dev mirror was fully ticked, the publish
+  copy was not — the publish copy is now a byte-identical mirror again).
+* **Installer track, ticket `04-startup-tasks`** — audited against the live
+  machine: both scheduled tasks exist, `RunLevel=Highest`, correct actions,
+  `komorebic` on the machine PATH, YASB autostart present via its own Run key.
+  Two genuine gaps were found in the **legacy duplicate**
+  (`komorebi-service.ps1`): `-Action install` used to register Medium-integrity
+  tasks from an unelevated shell (the ADR-0016 regression — and this host's user
+  is a standard user, so that path always produced the broken state), and
+  `-Action status` never confirmed YASB although its ticket requires all three.
+  Both fixed and verified; details in `bugs-fixing.md` §1.9 and the dev tracker
+  `~/.scratch/komorebi-1click-installer/issues/04-startup-tasks.md`.
+* **US 55's delivery proof still SKIPs** on this ConPTY host — measured again
+  this session, unchanged, and still a SKIP rather than a fake pass (§8).
 
 ---
 
@@ -119,7 +149,7 @@ shipped text.
 |---|---|---|
 | `01-scaffold-first-verb` | **done**, committed, pushed | commits `b6b0a2f`, `d8d9906`, `c23ea8c` |
 | `02-execution-contract` | **done**, verified | stop path, cancel-by-run-id, tree kill, timeouts; probe has dual-mode thresholds (ADR-0019) |
-| `03-registry-cli-twin` | **done**, verified | registry of 35 verbs + CLI twin + US 55 wired; see §8 for the one unprovable item |
+| `03-registry-cli-twin` | **done**, verified, committed `d64ec0c` | registry of 35 verbs + CLI twin + US 55 wired; see §8 for the one unprovable item |
 | **`04-eight-tabs`** | **next** | the real eight-tab strip; §9 tells you what is already in place |
 | 05–13 | not started | 05 (elevation) is the first one with a live parity gap — see §8 |
 
@@ -217,7 +247,9 @@ node tests\rust-ticket03-interrupt.mjs
 .\tests\rust-ticket02-probe.ps1
 ```
 
-The full set as last measured, all green:
+The full set as last measured, all green — **re-measured end to end at the start
+of session 5, after the R5 fix**, so these numbers are the current state rather
+than a copy of an older session:
 
 ```text
 cargo fmt --check                               exit 0
@@ -227,7 +259,7 @@ npm run check                                   exit 0   0 errors, 0 warnings
 npm test                                        exit 0   49 passed / 0 failed
 tests/rust-ticket03-interrupt.mjs               exit 0   8 passed, 1 skipped, 0 failed
 tests/rust-ticket01-cli.mjs                     exit 0   6/6 (regression)
-tests/check-shipped-text.mjs                    exit 0   190 files, no foreign script
+tests/check-shipped-text.mjs                    exit 0   no foreign script (the file count moves with harness evidence; the assertion is the invariant)
 tests/rust-ticket02-probe.ps1                   exit 0   26/26 strict (dual-mode, ADR-0019)
 ```
 
@@ -368,7 +400,11 @@ investigate. **Do not weaken the case to make it pass.**
   `CURRENT_TAB = 'Debugging'` and that tab's own rows. This is deliberate: the
   tracer's placeholder returned the whole table, which was exact with two verbs and
   wrong with 35.
-* **No commit yet.** Nothing from ticket 03's session is committed; see §10.
+* **Everything is committed now.** Session 5 landed the ticket-03 work
+  (`5df6f6d`, `d64ec0c`), its own installer-track fixes (`beec3f2`), and this
+  handoff update in the commit that carries it — all on `main`, unpushed. The
+  pre-existing unrelated dirty entries listed in §10 (including the two
+  `docs/HANDOFF-*` deletions) are deliberately left uncommitted for Davood.
 
 ---
 
@@ -428,11 +464,19 @@ NEW
  cheatsheets/fa/komorebi-hotkeys.md          (refreshed from the dev tree)
 ```
 
-**Nothing is committed.** All of the above is in the working tree. Pre-existing dirty
-entries that are **not** this work and must not be committed with it:
-`config/komorebi.json`, `scripts/safe-restart.ps1`, the two staged `docs/HANDOFF-*`
-deletions, `config/mini_asc.json`, `scripts/safe-restart-backup-full.ps1`,
-`scripts/safe-restart-v1.ps1`, `tests/uia-dump.ps1`.
+**Committed.** The body above landed in two focused commits — `5df6f6d` (the
+session-4 documents: ADR-0019, ADR-0020, the session-4 log, the dual-mode probe)
+and `d64ec0c` (the registry, the CLI twin, their tests, the ticket-03 docs).
+Session 5's installer-track fixes landed separately in `beec3f2`
+(`scripts/komorebi-service.ps1`, both `SCRIPTS-GUIDE` files), and this handoff's
+own update lands in the commit that carries it. All are on `main`, unpushed.
+
+Pre-existing dirty entries that are **not** this work and must not be committed
+with it: `config/komorebi.json`, `scripts/safe-restart.ps1`, the two
+`docs/HANDOFF-*` deletions, `config/mini_asc.json`,
+`scripts/safe-restart-backup-full.ps1`, `scripts/safe-restart-v1.ps1`,
+`tests/uia-dump.ps1`, `backup/`, `docs/Access-Denied-Solving/`,
+`docs/rust-translate/prompt.md`, and the `config/last-backup/` deletions.
 
 ---
 
@@ -464,6 +508,14 @@ deletions, `config/mini_asc.json`, `scripts/safe-restart-backup-full.ps1`,
   is a separate step that is never inferred from a successful link.
 * **The registry is the single source of truth.** Frontend and backend both derive
   from it; never keep a second list.
+* **`check-shipped-text.mjs` scans the docs, not only the UI.** Persian digits
+  fail it (defect R5); run it after any document change before claiming a green
+  baseline.
+* **`cheatsheets/` is gitignored** — the bilingual sheets are local-only
+  reference documents; never claim or expect them in a commit.
+* **Two ticket tracks share this repo**: the installer track (01-14, dev tree
+  only) and the Rust translation (01-13, `docs/rust-translate/`). Their numbers
+  collide — name the track before acting on a ticket number.
 * **Source for the cheatsheets is the dev tree** at
   `~/projects/komorebi-1click/cheatsheets/`, which is *newer* than the published
   copies — e.g. `komorebi-hotkeys.md` there (18.8 KB) has section 3.5

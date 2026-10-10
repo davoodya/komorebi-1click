@@ -161,3 +161,35 @@ The Dashboard exposes **35** primary verbs organized into tabs:
   count is 35 (asserted by
   `the_documented_counts_are_the_counts_the_table_actually_has`, which derives it
   from the table — do not hand-count).
+
+---
+
+## 6. Repo hygiene, the two ticket tracks, and host facts
+
+* **The repo hosts two workstreams, and their ticket numbers collide.** The
+  installer track (tickets 01-14) lives only in the dev tree at
+  `~/projects/komorebi-1click/.scratch/komorebi-1click-installer/`; the Rust
+  translation track (tickets 01-13) has its specs under
+  `docs/rust-translate/` and a dev mirror at
+  `~/.scratch/rust-translate/issues/`. Ticket `04` is `eight-tabs` in one track
+  and `startup-tasks` in the other — establish which track a prompt means
+  before executing.
+* **`cheatsheets/` is gitignored** (`.gitignore` line 36). The bilingual
+  cheatsheets are local reference documents; nothing in them is ever committed,
+  so "committed" claims never apply to them. The tracked script documentation
+  is `scripts/SCRIPTS-GUIDE.md` (English) and `scripts/SCRIPTS-GUIDE.fa.md`
+  (Persian).
+* **The shipped-text checker scans the docs too.** Persian digits count as
+  foreign script; new or edited documents must pass
+  `tests/check-shipped-text.mjs` before a baseline is claimed green (defect R5).
+* **The startup machinery's canonical implementation** is `Install-StartupTasks`
+  in `scripts/Install-Common.ps1` (installer ticket 04). The legacy duplicate,
+  `komorebi-service.ps1 -Action install`, now refuses when unelevated instead
+  of registering Medium-integrity tasks (ADR-0016), and `-Action status`
+  reports YASB and its autostart entry next to komorebi and whkd. See
+  `bugs-fixing.md` §1.9.
+* **The build host is Windows**: `cargo`/`npm` run through `win-exec.sh` with
+  `ALLOW_WINDOWS=1` from WSL; a WSL-native build is not the contract. The
+  wrapper has no console, which is why console-control-event tests SKIP there
+  (defect R3), and it does not propagate WSL environment variables across the
+  boundary — pass parameters explicitly.

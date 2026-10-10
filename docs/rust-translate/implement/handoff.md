@@ -1,5 +1,107 @@
 # Rust translation implementation handoff
 
+## 2026-10-10 (session 5) — ticket 03 committed; installer ticket 04 audited and fixed
+
+Two things happened, in the order the implement skill demands: verify first,
+then complete what the verification says is incomplete.
+
+**1. Ticket 03 verified, then committed.** The handoff §6 baseline was re-run on
+the Windows host before any change. Measured, this session:
+
+```text
+cargo test --locked --no-default-features       exit 0   24 passed / 0 failed
+npm run check                                   exit 0   0 errors, 0 warnings
+npm test                                        exit 0   49 passed / 0 failed
+tests/rust-ticket03-interrupt.mjs               exit 0   8 passed, 1 skipped, 0 failed
+tests/rust-ticket01-cli.mjs                     exit 0   6/6   (regression)
+tests/check-shipped-text.mjs                    exit 0   no foreign script (the file count moves with harness evidence; the assertion is the invariant)
+tests/rust-ticket02-probe.ps1                   exit 0   26/26 strict
+```
+
+One regression was found on the way in: `check-shipped-text.mjs` had been
+*recorded* as exit 0 at 190 files but actually failed at 194 — three lines of
+Persian digits (U+06F1) in the session-4 documents (`handoff-last-session.md`
+line 107, `ADR-0020` lines 43-44). Fixed by writing the illustrative Jalali
+dates in ASCII digits; re-run clean. Recorded as defect R5 in
+`bugs-fixing.md`, with the rule: **a baseline is a measurement with a
+timestamp, not a status to copy forward.**
+
+Then the work was committed in two focused commits, both scoped by explicit
+pathspec so no pre-existing dirty entry could enter:
+
+* `5df6f6d` — session 4's documents: ADR-0019 (dual-mode thresholds), ADR-0020
+  (bilingual cheatsheets), the session-4 log, and the dual-mode probe. The first
+  attempt at this commit swept the two pre-staged `docs/HANDOFF-*` deletions;
+  it was reset and re-issued with pathspecs, so the commit is exactly the four
+  intended files and those deletions remain staged for Davood to handle.
+* `d64ec0c` — ticket 03: `registry.rs` (the 35-verb table + TABS +
+  `render_help`), the registry-driven `run()`, `list_tabs`/`run_cli`/
+  `ensure_console`, the frontend `TabDefinition` contract, 11 registry tests +
+  5 frontend tests + the interrupt harness, ADR-0018, and the ticket-03 docs.
+  22 files.
+
+The tracker drift was repaired too: the dev mirror
+(`~/.scratch/rust-translate/issues/03-registry-cli-twin.md`) had every box
+ticked and a `done` status, while the publish copy
+(`docs/rust-translate/tickets/03-registry-cli-twin.md`) had none — the publish
+copy is now a byte-identical mirror again.
+
+**2. Installer track, ticket `04-startup-tasks` — audited against the live
+machine, two gaps fixed.** All thirteen boxes were already ticked in the dev
+tracker, so this was an audit, and it split the machinery into a canonical path
+and a legacy duplicate:
+
+* Canonical — `Install-StartupTasks` in `scripts/Install-Common.ps1`, reached
+  through `Install.ps1` (which requires elevation unless `-SkipElevationCheck`).
+  Every box holds, and the live machine agrees: `Komorebi` is Running and
+  `KomorebiWatchdog` Ready, both `RunLevel=Highest`, the logon action is
+  `komorebic.exe start --whkd` with a logon trigger, the watchdog action is the
+  windowless launcher pointing at `komorebi-service.ps1 -Action watchdog
+  -WatchdogMinutes 5` on a 5-minute repetition, `C:\Program Files\komorebi\bin\`
+  is on the machine PATH, and YASB autostarts through its own HKCU Run key.
+  The sandbox verification harness (`tests/sandbox-verify-install.ps1`) already
+  asserts both tasks' RunLevel and install idempotency.
+* Legacy duplicate — `komorebi-service.ps1 -Action install`, reachable by
+  double-clicking `scripts/2-ADD-TO-STARTUP.bat`. Two genuine gaps, both fixed:
+
+  1. It registered the tasks at `-RunLevel Highest` **only when the shell was
+     already elevated**; unelevated it silently registered Medium-integrity
+     tasks — the exact delayed regression ADR-0016 exists to prevent, and on
+     this host (standard user) that path always produced the broken state. It
+     also skipped the `komorebic` PATH entry and YASB autostart entirely. It
+     now refuses at the top of the action — before building the launcher or
+     registering anything — naming the elevated entry points, and the
+     unelevated fallback branch is deleted.
+  2. `-Action status` reported komorebi and whkd but had zero YASB awareness,
+     while the ticket requires status to confirm all three. `Get-Health` gained
+     `Yasb`/`YasbUptime`/`YasbAutostart` (the same Run-key-or-shortcut test
+     `Install-Common.ps1` uses), `Show-Status` prints them, and a missing bar
+     or autostart entry counts as a problem.
+
+  Verified: PowerShell parser 0 errors; live read-only `-Action status` printing
+  `yasb (status bar): True (up 213m)` and `yasb autostart: True`, verdict
+  HEALTHY; live unelevated `-Action install` throwing the refusal with nothing
+  registered. The two `SCRIPTS-GUIDE` files (English and Persian) now document
+  the elevation requirement and the YASB status lines. Details and the general
+  rule are in `bugs-fixing.md` §1.9.
+
+**Not done, honestly:**
+
+* US 55's *delivery* proof still SKIPs on this ConPTY host — measured again this
+  session (the harness reported the same ESRCH condition), unchanged, and still
+  reported as a skip rather than a fake pass. Convert it by running
+  `node tests\rust-ticket03-interrupt.mjs` from a real interactive console.
+* The installer's Windows-Sandbox suites (`tests/sandbox-*.ps1`) cannot run
+  from this session — they are Sandbox-gated and this host's shell is a
+  non-interactive PTY — so the installer fixes are verified by parser plus
+  targeted live runs, **not** by the full sandbox harness. A sandbox run of
+  `sandbox-verify-install.ps1` remains the deferred proof for those changes.
+* The next ticket is still `04-eight-tabs` (frontend). The installer track's
+  frontier is separate: its `05-autohotkey-vbs` is blocked by 02, not by the
+  audited 04.
+
+---
+
 ## 2026-10-09 (session 3) — Ticket 03 complete and verified, except US 55's delivery proof
 
 Ticket `03-registry-cli-twin` is **implemented and verified against the published
@@ -10,7 +112,7 @@ cannot deliver a console control event — measured, not assumed, and reported a
 `SKIP` rather than a pass. Details in "US 55" below. **The next ticket is
 `04-eight-tabs`.**
 
-Artefact: `releases/rust/KomorebiDashboard.exe` — **13,852,160 bytes** (debug
+Artefact: `releases/rust/KomorebiDashboard.exe` — **13,852,672 bytes** (debug
 profile; the release build is phase 4 of `build.ps1`). The WPF
 `releases/KomorebiDashboard.exe` (170,176,020 bytes) remains untouched.
 
