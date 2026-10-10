@@ -7,6 +7,7 @@ started 2026-10-10.
 | File | What it is |
 |---|---|
 | **`handoff.md`** | **Read this first. Always current.** The live-machine rule, owner decisions, what is fixed and verified (with evidence), the exact next action, traps, and open questions. |
+| **`final-report.md`** | **Build / verification / debug guide.** Final deliverable paths, architecture and data flow, the dry-run subsystem and its root-cause bug, host verification evidence, the manual tests A/B/C with expected output, known issues and the debugging checklist. |
 | `AUDIT-2026-10-10-entry-points-and-config.md` | The full audit: every finding with its runtime evidence, the hypotheses that were eliminated, and the requirements the new installer version must satisfy. |
 | `IMPLEMENTATION-2026-10-10.md` | Implementation log: each change with the commands run and the observed output. |
 | `HANDOFF-2026-10-10.md` | The audit-phase handoff (superseded in part by `handoff.md`). |
