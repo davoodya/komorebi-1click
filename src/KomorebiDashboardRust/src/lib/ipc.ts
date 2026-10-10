@@ -83,6 +83,14 @@ export interface AppInfo {
    * Folder. Never re-derived here.
    */
   settingsPath: string;
+  /**
+   * Ticket 11: where the running executable lives. Reported, not assumed —
+   * it is the one fact that answers "which copy did I launch", the most common
+   * cause of "the new version changed nothing".
+   */
+  exePath: string;
+  /** Ticket 11: what this build runs on, one line. */
+  runtimeDescription: string;
 }
 
 /** The event channel the backend streams batches on. */
@@ -145,6 +153,57 @@ export function runVerb(verb: string, args: string[], runId: string): Promise<Sc
  */
 export function cancelRun(runId: string): Promise<boolean> {
   return invoke<boolean>('cancel_run', { runId });
+}
+
+// ---------------------------------------------------------------------------
+// Ticket 08 — the installed-font enumeration.
+//
+// A Tauri ASYNC command: the `reg query` round-trip runs off the UI thread,
+// which is what keeps the font list's OPEN instant while the full set is
+// fetched behind the sentinel.
+// ---------------------------------------------------------------------------
+
+export function listInstalledFonts(): Promise<string[]> {
+  return invoke<string[]>('list_installed_fonts');
+}
+
+/** One shipped AutoHotkey script with the state it has on disk right now. */
+export interface AhkScriptState {
+  key: string;
+  label: string;
+  description: string;
+  hotkey: string;
+  interpreter: string;
+  enabled: boolean;
+}
+
+/**
+ * The three folders the About tab can reveal, as the backend's closed set.
+ * `settings` already has its own verb (reveal_settings_folder), which is the
+ * same folder through the same code path.
+ */
+export type FolderKind = 'scripts' | 'exe';
+
+export function revealFolder(kind: FolderKind): Promise<string> {
+  return invoke<string>('reveal_folder', { kind });
+}
+
+/** The links the About tab offers, as the backend's closed set. */
+export type LinkKind = 'site' | 'repository';
+
+export function openLink(kind: LinkKind): Promise<void> {
+  return invoke<void>('open_link', { kind });
+}
+
+/**
+ * The shipped AutoHotkey scripts annotated with their on-disk state.
+ *
+ * Called at read time, never cached: the tab re-reads after every bulk verb
+ * through this same command, which is what makes the rows reflect what actually
+ * happened instead of assuming the write succeeded.
+ */
+export function listAhkScripts(): Promise<AhkScriptState[]> {
+  return invoke<AhkScriptState[]>('list_ahk_scripts');
 }
 
 export function onOutput(handler: (batch: OutputBatch) => void): Promise<UnlistenFn> {

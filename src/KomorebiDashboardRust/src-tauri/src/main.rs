@@ -32,6 +32,16 @@ fn list_verbs() -> &'static [Verb] {
 fn list_tabs() -> &'static [Tab] {
     &TABS
 }
+/// The shipped AutoHotkey scripts annotated with their state on disk RIGHT NOW.
+///
+/// Not cached: the ticket's contract is that each row shows the state read at
+/// read time, and the tab re-reads after every bulk verb through this same
+/// command — which is what makes the UI reflect what actually happened rather
+/// than assuming a write succeeded.
+#[tauri::command]
+fn list_ahk_scripts(state: tauri::State<'_, AppState>) -> Vec<dashboard_core::ahk::AhkScriptState> {
+    dashboard_core::ahk::read_states(&state.scripts)
+}
 #[tauri::command]
 fn app_info(state: tauri::State<'_, AppState>) -> serde_json::Value {
     serde_json::json!({"product":"Komorebi Admin Dashboard", "version":env!("CARGO_PKG_VERSION"),
@@ -40,6 +50,16 @@ fn app_info(state: tauri::State<'_, AppState>) -> serde_json::Value {
         // administrative rows the same way the backend does — one registry
         // flags reading, one answer, no second probe.
         "elevated": dashboard_core::is_elevated(),
+        // Ticket 11: where the running executable lives (the one fact that
+        // answers "which copy did I launch") and the runtime it runs on.
+        "exePath": std::env::current_exe()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "(unavailable)".to_string()),
+        "runtimeDescription": format!(
+            "Tauri {} · {}",
+            env!("CARGO_PKG_VERSION"),
+            std::env::consts::OS
+        ),
         // Ticket 06: where the settings document lives, so the Settings pane
         // can show the real path and Open Folder reveals the real directory
         // without the frontend re-implementing the profile lookup.
@@ -321,14 +341,85 @@ fn reset_settings() -> Result<String, String> {
 fn reveal_settings_folder() -> Result<String, String> {
     let dir = settings::settings_dir();
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
+    reveal_path(&dir)
+}
+
+/// The three folders the About tab names, as a closed set.
+///
+/// A CLOSED enum, not a path parameter: the About tab reports folders the
+/// backend itself declared (app_info's own answers), so a reveal action can
+/// only ever name one of those — an arbitrary path from the frontend would be
+/// an injection surface for no benefit.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum FolderKind {
+    Scripts,
+    Settings,
+    Exe,
+}
+
+#[tauri::command]
+fn reveal_folder(kind: FolderKind, state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let dir = match kind {
+        FolderKind::Scripts => state.scripts.clone(),
+        FolderKind::Settings => {
+            let dir = settings::settings_dir();
+            std::fs::create_dir_all(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
+            dir
+        }
+        FolderKind::Exe => std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+            .ok_or_else(|| "cannot locate the executable".to_string())?,
+    };
+    reveal_path(&dir)
+}
+
+/// The three links the About tab offers, as a closed set — the same reason the
+/// folder reveal is a closed enum: the URLs are backend-declared constants, and
+/// an arbitrary URL parameter from the frontend would be an injection surface.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum LinkKind {
+    Site,
+    Repository,
+}
+
+#[tauri::command]
+fn open_link(kind: LinkKind) -> Result<(), String> {
+    let url = match kind {
+        LinkKind::Site => "https://davoodya.ir",
+        LinkKind::Repository => "https://github.com/davoodya/komorebi-1click",
+    };
+    // Only http(s) ever reaches a spawn: the values above are the whole set, and
+    // a `start`-style shell launch of any other scheme would be a shell escape.
+    if !url.starts_with("https://") {
+        return Err(format!("refusing to open {url}"));
+    }
+    #[cfg(windows)]
+    {
+        // cmd /c start hands the URL to the shell, which resolves the user's
+        // default browser. A successful SPAWN is the signal, not the exit code.
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .status()
+            .map_err(|e| format!("launch browser: {e}"))?;
+    }
+    #[cfg(not(windows))]
+    {
+        return Err(format!("open links is only implemented on Windows (url: {url})"));
+    }
+    Ok(())
+}
+
+/// Open Explorer at a directory. A successful SPAWN is the signal, NOT the exit
+/// code: explorer.exe is a shell facade that hands the window off to an existing
+/// explorer process and routinely exits 1 having opened it.
+fn reveal_path(dir: &std::path::Path) -> Result<String, String> {
     let dir_text = dir.display().to_string();
 
     #[cfg(windows)]
     {
-        // A successful SPAWN is the signal, NOT the exit code: explorer.exe is
-        // a shell facade that hands the window off to an existing explorer
-        // process and routinely exits 1 having opened it. Treating that as a
-        // failure reports "Settings error" while the folder is plainly open.
         let _status = std::process::Command::new("explorer.exe")
             .arg(&dir_text)
             .status()
@@ -363,6 +454,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             list_verbs,
             list_tabs,
+            list_ahk_scripts,
             app_info,
             run_verb,
             cancel_run,
@@ -371,6 +463,8 @@ fn main() {
             save_settings,
             reset_settings,
             reveal_settings_folder,
+            reveal_folder,
+            open_link,
             list_installed_fonts
         ])
         .run(tauri::generate_context!())

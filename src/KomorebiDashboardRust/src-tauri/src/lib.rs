@@ -1,3 +1,4 @@
+pub mod ahk;
 pub mod fonts;
 pub mod registry;
 pub mod settings;

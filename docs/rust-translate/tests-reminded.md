@@ -173,3 +173,35 @@ On the production machine (Davood's box) or a spare machine — never automated:
 
 The GUI-launch, theme-toggle-click, and UAC accept/decline checks stay manual (ticket 14): the
 harness runs the installer and the CLI surface, and Davood clicks the window.
+
+
+## Session 14 — manual passes (ANGRY: runner = Davood only)
+
+**Ticket 10 — AutoHotkey tab** (executable, default window):
+- [ ] Open the AutoHotkey tab: three script rows show the manifest metadata
+      (label, description, hotkey, interpreter) and the state from disk.
+- [ ] Flip one option: the row marks itself changed, nothing runs; Apply
+      reports the script as applied and the disks state matches.
+- [ ] With `ahk-state.json` deleted the tab shows everything enabled.
+- [ ] Apply stops at the first failing script, names it, and leaves the later
+      rows staged (simulate by breaking one script file? NO — instead: start a
+      verb that requires elevation from the pane and decline the UAC prompt;
+      the row reverts and the failure is named).
+- [ ] Enable All / Disable All run, and the rows afterwards re-read the disk
+      state (the two staged selections reflect reality, not the assumption).
+- [ ] AutoHotkey Version / NewFile check / Diagnostics stream output like any
+      other registry row.
+- [ ] Relaunch: the panel shows exactly what was applied earlier.
+
+**Ticket 11 — Customization + About** (executable, default window):
+- [ ] Open the Customization tab: accent swatches, theme toggle, console
+      height slider, the typography controls, Apply and Reset are all present.
+- [ ] Drag the console-height slider: every pane drags live; Apply persists
+      it; relaunch keeps it; Reset returns it to the document default.
+- [ ] Each accent swatch and the theme toggle apply on click (this write goes
+      through the document — seeing it IS the decision); Reset to defaults
+      restores both and previews them.
+- [ ] About tab: version line shows the build version and the Git SHA; the
+      executable, scripts and settings paths are real; Copy puts the product
+      line on the clipboard; open-folder opens the right folder for each
+      path; site and repository links open in the browser.

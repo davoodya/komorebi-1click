@@ -1,195 +1,183 @@
-# Handoff — Rust translation track (sessions 1–13)
+# Handoff — Rust translation track (sessions 1–14)
 
 This document is the handoff for the **Rust/Tauri dashboard translation** track only
 (`docs/rust-translate`, tickets `01`–`13`). The installer track has its own
 `docs/rust-translate/handoff.md`; this file exists so the two tracks' state can
-never be confused. Written 2026-10-11, session 13.
+never be confused. Written 2026-10-11, session 14.
 
 ## 0. THE HEADLINE FOR THE NEXT SESSION
 
-**Two tickets were implemented in session 13: `08-typography-scale` and
-`09-console-pane`** (the two session 12 named as the next work, in the order
-Davood asked for). Every Rust-translate ticket except `10`, `11`, the installer
-bundling half of `12`, and Davood's own manual pass on `13` now has code and
-automated evidence:
+**Two tickets were implemented in session 14: `10-autohotkey-tab` and
+`11-customization-about`** — the last two un-implemented track tickets. Every
+Rust-translate ticket now has code plus automated evidence. What remains:
+
+1. **Ticket `12`'s bundling half** — the release build and pins exist; the
+   installer bundling (icons + the packaged deliverable) is the installer
+   track's, finish it there.
+2. **Ticket `13`'s manual pass — Davood's** (§1). When he is ready, he runs
+   the full test pass recorded in `tests-reminded.md`.
+
+**Full ticket audit (verified against the code, not memory):**
 
 | Ticket | Status | Evidence |
 |---|---|---|
 | 01 scaffold + first verb | done | shell, registry, CLI twin, console — all live |
-| 02 execution contract | done | `src-tauri/src/lib.rs` + `tests/dispatch.rs` (4) + `tests/execution_contract.rs` (9) |
+| 02 execution contract | done | `lib.rs` + `tests/dispatch.rs` (4) + `tests/execution_contract.rs` (9) |
 | 03 registry / CLI twin | done | registry parity suites |
 | 04 eight tabs | done | `App.svelte` + `tabs.spec.ts` |
-| 05 elevation | **done via installer ticket 12** (sessions 10–11) | gate + exit-740 + relaunch + generated dialog; ticket-12's static suite 48/48 |
-| 06 settings | done — session 12 | `src-tauri/src/settings.rs` (11 cargo tests) + `settings.ts` / `settings.svelte.ts` / `SettingsPane.svelte` (12 vitest) |
-| 07 visual system | done — session 12 | `theme.ts` hex/cycle additions, `app.css` `[data-accent="Custom"]`, Toggle Color button |
-| 08 typography scale | **done — session 13** | `src-tauri/src/fonts.rs` (5 cargo tests, one live-registry) + `list_installed_fonts` command, `src/lib/fonts.ts` + `fonts.spec.ts` (6), `theme.ts` `applyTypography` (+3 theme tests), `TypographyControls.svelte` rendered by `SettingsPane` |
-| 09 console pane | **done — session 13** (completing the 01–06 base) | drag handle + `percentFromDrag` (+3 console tests), `consolePercent` persisted through the document and applied at startup, console font/size from the document |
-| 10 AutoHotkey tab | not implemented | — |
-| 11 customization/about | not implemented | — |
-| 12 packaged deliverable | partial | release build + pins exist (installer t13); icons/installer bundling remain |
-| 13 verification/regression | partial | automated coverage exists (§4); **the visual/scale/clean-machine/elevation confirmations are Davood's manual pass** |
+| 05 elevation | **done via installer ticket 12** (sessions 10–11) | gate + exit-740 + relaunch + generated dialog |
+| 06 settings | done — session 12 | `settings.rs` (11 cargo) + settings store/pane (12 vitest) |
+| 07 visual system | done — session 12 | `theme.ts` hex/cycle, `app.css` `[data-accent="Custom"]`, Toggle Color |
+| 08 typography scale | done — session 13 | `fonts.rs` (5 cargo) + `list_installed_fonts`, `fonts.ts`/`fonts.spec.ts` (6), `theme.ts` `applyTypography` (+3), `TypographyControls.svelte` |
+| 09 console pane | done — session 13 | drag handle + `percentFromDrag` (+3 console tests), `consolePercent` persisted through the document, console font/size from the document |
+| 10 AutoHotkey tab | **done — session 14** | `ahk.rs` (5 cargo) + `list_ahk_scripts`, `ahk.svelte.ts` + `ahk.spec.ts` (9), `onRunFinished`/`runSucceeded` seam, `AutoHotkeyPane.svelte` |
+| 11 Customization/About | **done — session 14** | `CustomizationPane.svelte` (swatches + theme + console slider + reused TypographyControls + Apply/Reset), `AboutPane.svelte` + `about.ts`/`about.spec.ts`, `app_info` exePath/runtime, `reveal_folder`/`open_link` closed-enum commands |
+| 12 packaged deliverable | partial | release build + pins exist (installer t13); installer bundling remains |
+| 13 verification/regression | partial | automated coverage exists (§4); the rest is **Davood's manual pass** |
 
-**Remaining work order:** `10-autohotkey-tab` → `11-customization-about` →
-finish `12`'s bundling → then **tell Davood the Rust translation is complete so
-he runs his full test pass** (§1) — including the 125 % visual check on the
-portrait monitor that ticket 08 leaves to him.
+**The Rust translation track's code is COMPLETE.** Remind Davood so he runs
+§1's full test pass.
 
 ## 1. ⚠ TEST OWNERSHIP — READ THIS FIRST
 
-**Davood runs the full test pass himself, after the Rust translation is
-complete.** He stated this as a standing answer (2026-10-11, session 12) and
-re-confirmed it for this pair of tickets (session 13): tests as a whole are
-executed by him at the end of the Rust translate work — **remind him when the
-translation is finished**, and until then do not claim the translation is
-"tested" beyond the automated evidence each ticket leaves.
+**Davood runs the full test pass himself.** He has stated this as a standing
+answer (2026-10-11, sessions 12–14): the tests as a whole are executed by him
+at the end of the Rust translate work — **remind him when the translation is
+finished**, and until then do not claim the translation is "tested" beyond the
+automated evidence each ticket leaves.
 
-What that means for the implementing agent:
-- Automated suites (cargo/vitest/tsc/svelte-check/static) ARE run per ticket and must be green
-  before a ticket is marked done — that is the ticket's evidence, and it is what
-  the review and commit gates require.
+- Automated suites (cargo/vitest/tsc/svelte-check/static) ARE run per ticket
+  and must be green before a ticket is marked done — that is the ticket's
+  evidence.
 - The end-to-end passes — every tab clicked in the built executable, 100 % and
   125 % scale on the portrait monitor, a clean-machine first launch, elevation
   UAC accept/decline, and anything that touches the live Komorebi/WHKD/YASB
-  stack — are **Davood's manual pass**. Record them in `tests-reminded.md` and
-  leave them unchecked.
+  stack — are **Davood's manual pass**, recorded UNCHECKED in
+  `tests-reminded.md`.
 - The LIVE-MACHINE RULE still holds: never run anything that touches the live
   Komorebi/WHKD/YASB configuration on this Windows host; Windows Sandbox or
   `-DryRun` only.
 
-## 2. What session 13 actually built
+## 2. What session 14 actually built
 
-**Ticket 08 — Typography and UI scale** (preview live, persist on Apply — the
-WPF's Settings tab without the WPF's dialog):
+**Ticket 10 — AutoHotkey tab:**
 
-- `src-tauri/src/fonts.rs` — the installed-font enumeration with **no new
-  dependency** (the WPF calls `Fonts.SystemFontFamilies` via DirectWrite; this
-  crate has no DirectWrite binding). Both `HKLM` and `HKCU` `...\Fonts` keys
-  through `reg query`, face names parsed by dropping the key header and the file
-  descriptor, trailing parenthesized type tokens stripped **in a loop** (the
-  registry writes e.g. `110_Besmellah_1(MRT) (TrueType)`), case-folded dedupe
-  (HKLM + per-user both list Segoe UI), case-folded sort. Known trade-off,
-  documented in the module: registry granularity is FACE-level, so multi-face
-  families appear once per face — the tier-1 standard list covers the common
-  families. 5 cargo tests, including one that observes the live registry and
-  asserts the shape (deduped, sorted, no trailing descriptor), never a fixed
-  list. The Tauri command is `async` — the enumeration runs off the UI thread.
-- `src/lib/fonts.ts` — the standard tier in the WPF's exact order with the mono
-  faces spliced mid-list, `ALL_FONTS_SENTINEL = "Custom (All Fonts)..."` last in
-  both lists, and `enumerateInstalledFonts()` behind a module-level promise so
-  it happens **once** and later opens are instant. `fonts.spec.ts` (6 tests)
-  pins: sentinel last, sentinel never applied, mono ⊆ standard exactly once,
-  console list monospaced-only.
-- `src/lib/theme.ts` — `applyTypography(root, values)` writes the five CSS
-  properties the sheet already declares; `scaleMultiplier(100|125|150)` → the
-  unitless `--ui-scale` the CSS multiplies by (never zero); a monospaced /
-  sans-serif fallback rides under the chosen face. `theme.svelte.ts`'s applier
-  calls it on every document load, so the document applies typography like
-  theme and accent. `theme.spec.ts` gained 3 tests.
-- `src/components/TypographyControls.svelte` — five controls in the Settings tab.
-  A change writes the CSS properties immediately (preview; the document is
-  untouched); **Apply** writes all five through one `updateSettings`; **Revert**
-  re-reads the document. The sentinel option triggers the cached enumeration and
-  is never itself applied — after it fires, the previous real font stays
-  selected.
+- `src-tauri/src/ahk.rs` — the manifest transcribed from
+  `scripts/Install-Common.ps1` (order and per-script interpreter pinned), the
+  state file at `<repo>\autohotkey\ahk-state.json` (the scripts directory's
+  sibling — the installer's own rule), missing/unreadable = all enabled,
+  manifest keys only, real JSON bools only. 5 cargo tests.
+- `list_ahk_scripts` serves manifest + CURRENT disk state; the pane re-reads at
+  open and after every bulk verb — the tab never shows a cached guess.
+- `ahk.svelte.ts` — the selection/applied split, serial Apply stopping at the
+  first failure (reverting the failed row and naming it), persistence through
+  the settings document's `ahkScriptStates`. Injected seams; 9 vitest.
+- `dispatch.ts` gained `onRunFinished` (the completion seam) and
+  `runSucceeded` (exit 0 AND not cancelled AND not timed-out). Bulk verbs are
+  the registry's own rows through the shared `VerbRow`; completion triggers the
+  re-read.
+- `AutoHotkeyPane.svelte` — three staged rows + the registry's bulk and
+  diagnostic rows through the shared component; `App.svelte` routes the tab to
+  it.
 
-**Ticket 09 — console pane** (the session-12 base plus the two remaining halves):
+**Ticket 11 — Customization + About:**
 
-- The drag handle: a 6px strip on the pane's top edge, `role="separator"` with
-  the live `aria-valuenow`/min/max, pointer capture (the drag never leaves the
-  handle), arrow keys ±5%. Geometry is the pure
-  `percentFromDrag(containerTop, containerHeight, clientY)` — the pointer's
-  offset from the TAB BODY, clamped to 10–60; a degenerate rect returns the
-  default instead of NaN (pinned by 3 new `console.spec.ts` tests).
-- Persistence: `consolePercent` is a settings-document field (ticket 06) — the
-  drag writes it on pointer-up only when it changed, and `App.svelte`'s applier
-  applies it at startup. One writer, one reader, identical on every tab.
-- The console's own font and size come from ticket 08's `--console-font` /
-  `--console-font-size`, written from separate document fields.
+- `CustomizationPane.svelte` — theme toggle, eight accent swatches + custom
+  colour input, console-height slider bound to the shared pane, ticket 08's
+  `TypographyControls` reused, Apply Settings + Reset to defaults. Preview
+  live; the pane-local state persists through the settings document.
+- `AboutPane.svelte` + `about.ts` — product, version + Git SHA, exe path,
+  scripts/settings paths, runtime; copy-to-clipboard; open-folder for the
+  three paths; site/repository links.
+- `app_info` gained `exePath` and `runtimeDescription`. Two new CLOSED-ENUM
+  commands: `reveal_folder(scripts|settings|exe)` and
+  `open_link(site|repository)` — a path or URL parameter from the frontend
+  would be an injection surface for no benefit, and `open_link` spawns `https://`
+  URLs only. `about.spec.ts` pins the version line and the copy line.
 
 ## 3. Environment & protocol facts for the next agent
 
-- **Publish tree** `H:\Repo\komorebi-1click` (WSL `/mnt/h/...`) is the source of
-  truth; the dev tree `~/projects/komorebi-1click` carries the scratch copies of
-  the issues. The publish `docs/rust-translate/tickets/*.md` mirror the scratch
-  `issues/*.md`; update statuses in **both**.
-- Building/testing from WSL goes through the Windows host via
-  `~/.hermes/scripts/win-exec.sh` (vintage: `Set-Location 'H:\Repo\...\src-tauri';
-  & cargo test`). Path from WSL: `real = glob(...)[0]` then
-  `H:` + tail — **do not hand-type the crate directory name**; it contains a
-  non-ASCII character that transcription has repeatedly mangled.
-- The frontend's gates are `npm run check` (**svelte-check — it catches template
-  type errors `tsc --noEmit` cannot**) and `npx vitest run` (include is
-  `src/tests/**/*.spec.ts`). `SettingsPane`'s `status` is a FUNCTION
-  (`status()`) while `settingsDocument` is a `$state` object — call the
-  function-shaped exports (`busy()`, `loaded()`, `status()`), read the object
-  ones. A union status must be read once into a const so the switch narrows it.
-- Svelte 5 module rules that cost time: a module-level `$state` export may not
-  be reassigned (private `let` + exported functions), and `export function get
-  x()` is invalid — reactive reads are plain functions.
-- Rust doc-comment fences are compiled: a `` ``` `` example block runs as a
-  doctest, so non-runnable examples must be fenced as `` ```text ``.
-- Both suites green at commit: **cargo 46** (fonts 5, settings 11, dispatch 4,
-  elevation 6, execution_contract 9, registry 11) — the five fonts tests are the
-  new ones; **vitest 104/104** (fonts 6, theme +3, console +3 are new),
-  `tsc --noEmit` clean, `npm run check` 0 errors (4 warnings — two on the new
-  separator, two pre-existing on `ElevationDialog`), release build green
-  (2m06s).
+- Publish tree `H:\Repo\komorebi-1click` is the source of truth; the dev tree
+  `~/projects/komorebi-1click` carries the scratch trackers. Ticket statuses
+  are mirrored in **both** trees.
+- Builds/tests go through `~/.hermes/scripts/win-exec.sh`; resolve project
+  paths in python (`real = glob(...)[0]`, then `H:` + tail) — the crate
+  directory name contains a non-ASCII character transcription keeps mangling.
+- Gates per ticket: `cargo test`, `npx vitest run`, `npx tsc --noEmit`,
+  `npm run check` (**svelte-check** — it catches template type errors `tsc`
+  cannot), `node tests/check-shipped-text.mjs`, `cargo tauri build --no-bundle
+  -- --locked`.
+- Store conventions (from sessions 12–13, still true): `busy()`, `loaded()`,
+  `status()`, `settingsPath()` are exported FUNCTIONS; `settingsDocument` and
+  `console_` are `$state` objects. A union status is read once into a const so
+  the switch narrows it.
+- Injection seams: the settings store and the AHK store take their backend/
+  runner through `configure…`/`set…` seams, so the suites drive the shipped
+  stores in plain node and Tauri is exercised by the built executable.
+- Svelte 5 module rules: no reassigned exported `$state`, no
+  `export function get x()`; reactive reads are plain functions.
+- Rust doc fences compile: non-runnable examples are fenced ```text.
+- All suites green at session-14 commit: **cargo 51/51** (ahk 5, fonts 5,
+  settings 11, dispatch 4, elevation 6, execution_contract 9, registry 11),
+  **vitest 117/117** (ahk 9, fonts 6, about 4, theme +3, console +3 new since
+  session 12's 90), tsc clean, svelte-check 0 errors (4 warnings — the two
+  known pre-existing ones plus the ARIA separator pair), shipped-text PASS,
+  release build green (1m56s).
 
 ## 4. Where `13-verification-regression` stands (automated half)
 
-The ticket's first checkbox names the tests that must exist; current coverage:
-cargo settings (11) covers **settings round-trip, clamping/reset, quarantine**;
-`tests/dispatch.rs` + `tests/execution_contract.rs` cover **batching, cancel,
-timeout, tree kill, argument splitting, script resolution**; `tests/elevation.rs`
-covers the **elevation gate ordering and exit 740**; `tests/fonts.rs` (in-module)
-pins the **registry parse**; the vitest console/typography suites pin the
-**clamp band, sentinel semantics, and the typography writer**. The remaining
-lines (all eight tabs visually confirmed, 100 %/125 % scale, clean-machine run,
-sandbox confirmation) are **manual and are Davood's** — do not check them.
+Coverage that exists: cargo settings (11) — settings round-trip/clamp/
+quarantine; `dispatch.rs` + `execution_contract.rs` (13) — batching, cancel,
+timeout, tree kill, argument splitting, script resolution; `elevation.rs` (6)
+— gate ordering and exit 740; `ahk.rs` (5) — the manifest, the state file,
+the corrupt-file default; `fonts.rs` (5) — the registry parse. Frontend:
+console/typography/ahk/about suites pin the clamp band, the sentinel
+semantics, the typography writer, the AHK apply contract, and the About copy
+line. The remaining lines (all eight tabs visually confirmed, 100 %/125 %
+scale, clean-machine run, sandbox confirmation, every button clicked in the
+built executable) are **manual and are Davood's** — do not check them.
 
 ## 5. Known-good constraints that must survive every future ticket
 
-- `settings.json` is the single writer of appearance AND typography; nothing
-  else persists theme/accent/font/scale. The console's height is a field of the
-  same document.
+- `settings.json` is the single writer of appearance, typography, console
+  height and the AHK state mirror; nothing else persists them. The disk
+  `ahk-state.json` remains the SCRIPTS' own state — the document is the UI's
+  mirror, and the disk wins on disagreement.
 - WPF file compatibility: `camelCase` serde names, same directory, same
   normalization rule. A disagreement fails a test, never drifts silently.
-- No literal colour values in components; tokens only (`tokens.spec.ts` guards).
-  The typography writer's five CSS properties are the same seam — one writer.
+- No literal colour values in components; tokens only. The typography
+  writer's CSS properties are one seam; the console height lives in the same
+  document.
 - The font sentinel is a picker ACTION, never a persisted value; tier 1 opens
-  instantly and the enumeration happens once, off the UI thread.
-- Preview is not persistence: typography previews write CSS properties only;
-  the document moves on Apply.
-- All shipped text is English; the final REPORT to Davood is Persian with English
-  technical terms.
+  instantly; the enumeration happens once, off the UI thread.
+- New backend actions that take a destination are CLOSED ENUMS the backend
+  resolves (`reveal_folder`, `open_link`) — never a path or URL string from
+  the frontend.
+- Preview is not persistence; success is the backend's three verdict facts
+  (exit 0, not cancelled, not timed-out), not a plausible guess.
+- All shipped text is English; the final REPORT to Davood is Persian with
+  English technical terms.
 - `/mnt/*` stays read-under-approval; commands go through `win-exec.sh`.
 
 ## 6. Suggested next session
 
-1. `10-autohotkey-tab`.
-2. `11-customization-about`.
-3. Finish `12`'s bundling (icons + installer).
-4. When the last Rust ticket lands: **remind Davood** that the Rust translation
-   is complete so he runs his full test pass (§1) — including ticket 08's 125 %
-   visual check on the portrait monitor.
+The track's implementation is complete. What is left:
 
-## 7. Session-13 review note (post-commit)
+1. Finish ticket `12`'s installer bundling in the installer track
+   (`docs/rust-translate/handoff.md` owns that).
+2. **Remind Davood** that the Rust translation is complete so he runs his
+   full test pass (§1) — his `tests-reminded.md` manual list is the script.
 
-Session 13 was reviewed inside the same commit. What it caught, so the next
-agent does not re-learn it:
+## 7. Session-14 review notes (post-commit)
 
-- **`status` is a function** (`SettingsPane` read `status.file` / `status.message`
-  without the call — a real type error `svelte-check` caught and `tsc` cannot,
-  because it is a template). Fixed by reading the status once into a const and
-  narrowing the union inside the switch. Run `npm run check`, not just `tsc`.
-- The shipped convention for the settings store is mixed: `busy()`, `loaded()`,
-  `status()` are functions; `settingsDocument` is a `$state` object. Importing
-  the function-shaped ones as values compiles nowhere useful — call them.
-- The live registry contains faces with parenthesized groups inside their own
-  names (`2  Mitra_1 (MRT)Bold`); the strip is a loop of trailing descriptors
-  only, and the test asserts what is actually gone (a TRAILING descriptor), not
-  "no parens anywhere".
-- The console handle is a `role="separator"` div with `tabindex="0"` — the ARIA
-  window-splitter pattern. `svelte-check`'s a11y warnings about it are expected
-  noise, recorded here so they are not "fixed" into a worse widget.
-
+- A `write_file`/patch of `ipc.ts` earlier in the session was lost between
+  the in-memory edit and its write; `svelte-check` caught the missing exports
+  immediately. Run the gates after every edit batch, not only at the end of a
+  ticket — the per-ticket gate set in §3 is cheap and it is the only thing
+  that caught this.
+- The pane wiring order matters: a child component's `onMount` runs BEFORE
+  the shell's, so a pane that needs the registry looks its verbs up in an
+  `$effect` (once), not in `onMount`.
+- The AHK store's runner seam builds lazily from the registry verbs; changing
+  the verb table resets the cached runner (`setAhkVerbs`), or the first apply
+  would close over stale verbs.

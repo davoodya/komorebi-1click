@@ -6,6 +6,9 @@
   import ConsolePane from './components/ConsolePane.svelte';
   import ElevationDialog from './components/ElevationDialog.svelte';
   import SettingsPane from './components/SettingsPane.svelte';
+  import AutoHotkeyPane from './components/AutoHotkeyPane.svelte';
+  import CustomizationPane from './components/CustomizationPane.svelte';
+  import AboutPane from './components/AboutPane.svelte';
   import { setSettingsPath } from './lib/settings.svelte.ts';
   import { console_ } from './lib/console.svelte.ts';
   import { onOutput } from './lib/ipc';
@@ -123,7 +126,21 @@
   </div>
 
   <TabLayout title={activeTab?.label ?? 'Loading'} description={activeTab?.description ?? ''}>
-    {#if registry.error}
+    {#if activeTab?.id === 'AutoHotkey'}
+      <!--
+        Ticket 10: this tab's surface is hand-built (the staged script rows),
+        and the registry's own bulk + diagnostic rows render inside it through
+        the shared row component — one tab, one pane, no duplicated row list.
+      -->
+      <AutoHotkeyPane />
+    {:else if activeTab?.id === 'Customization'}
+      <!-- Ticket 11: the appearance surface. The Settings tab keeps its own
+           registry rows and document actions; appearance lives here. -->
+      <CustomizationPane />
+    {:else if activeTab?.id === 'About'}
+      <!-- Ticket 11: read-only by design — it starts no script. -->
+      <AboutPane />
+    {:else if registry.error}
       <p class="tab-description console-line-stderr">
         Could not read the verb registry: {registry.error}
       </p>
