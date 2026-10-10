@@ -95,7 +95,7 @@ asserts `restart-whkd.ps1` stops via `komorebic stop --whkd`, starts via
 `Start-ScheduledTask -TaskName 'Komorebi'`, and verifies the pairing
 afterwards, exiting non-zero when it is broken.
 
-**Ticket 08 — `tests/ticket08-ahk.tests.ps1` (new, 2026-10-04):** 17 assertions
+**Ticket 08 — `tests/ticket08-ahk.tests.ps1` (new, 2026-10-04; hardened 2026-10-10):** 26 assertions
 
 **Ticket 09 — `tests/ticket-monitor.tests.ps1` (new, 2026-10-04):** 12 assertions.
 Static geometry regression tests. Feeds synthetic `komorebic state` objects
@@ -109,6 +109,23 @@ persist-and-regenerate round-trip, degradation to defaults on a corrupt state
 file, path-portability of the four new scripts, clean parsing, and cleanup
 removing the leftovers. Runs entirely against a sandbox copy; containment is
 verified after every run (3 AHK processes, Startup VBS intact).
+
+**Ticket 08 — live audit (session 9, 2026-10-10):** the first live run of the
+enable/disable cycle found two real bugs, both fixed and both now guarded by
+static regression assertions (section 9 of the suite, red-tested by
+re-introducing each bug):
+
+1. The process matcher pattern lacked the trailing wildcard, so a disable
+   never killed the process and the next enable started a duplicate.
+2. `ahk-toggle.ps1`'s local `$state` was the same variable as its
+   `[ValidateSet] $State` parameter (case-insensitive names + attribute
+   re-validation), so the toggle-all entry point died at its first statement
+   and had never worked.
+
+The live cycle was then exercised end to end with a full restore (24/24
+checks, exit 0): per-script disable/enable, toggle-all both ways, and a final
+byte-identical `AppRunner.vbs`. The evidence is recorded in the ticket tracker
+under the issue directory (`08-ahk-scripts.md`).
 
 **T04.1–T04.4 — startup machinery (ticket 04):** the `Komorebi` logon task exists at
 `RunLevel Highest` with a logon trigger running `komorebic.exe start --whkd`; the

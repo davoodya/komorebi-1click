@@ -251,7 +251,38 @@ If your connection drops, this document alone is enough to continue.
   embedded newlines produce phantom PASSes). The two affected assertions were
   rewritten as single-line patterns.
 
-### 0.6 Session history (compressed, sessions 2–7)
+### 0.6 Session 9 continued (2026-10-10) — installer ticket 08 live-audited; two real bugs fixed
+
+* **Ticket 08 live audit (see `08-ahk-scripts.md` in the issue directory for
+  the full record).** The enable/disable cycle had only ever been exercised
+  statically; the first live run on this machine found **two real bugs**:
+  1. *Disable never killed the process.* The matcher pattern
+     `"*\$($target.File)"` has no trailing wildcard while the live command
+     line quotes the script path and ends with `.ahk"`, so it matched nothing
+     — the process stayed and the next enable started a **duplicate**
+     instance. Fixed in `ahk-script.ps1` and `ahk-toggle.ps1` (trailing `*`).
+  2. *`ahk-toggle.ps1` was dead on arrival.* Its local `$state` IS the
+     `[ValidateSet('enabled','disabled')] $State` parameter (PowerShell names
+     are case-insensitive; assigning to a ValidateSet variable re-runs the
+     attribute validation on the spot), so every invocation threw
+     `...not a valid value for the State variable` and exited 1 at the first
+     statement — the Dashboard's toggle-all button had never worked. Fixed by
+     renaming the local to `$stateMap`.
+* **Both are now guarded** by static regression assertions — suite
+  `tests/ticket08-ahk.tests.ps1` section 9 (the two red-tested: re-introducing
+  either bug fails the suite, verified 2 failures → 0). Suite **26/26**, exit
+  0. Live E2E with a full restore afterwards: **24/24 checks, exit 0**
+  (`tests/.build/t08-e2e.ps1`): per-script disable/enable (state file,
+  commented/restored VBS line, process killed, exactly one process relaunched
+  with the exact interpreter command line), toggle-all both ways, the doctor,
+  and a final **byte-identical `AppRunner.vbs`** (SHA256 match) with the state
+  file restored to its pre-audit absence. Only the physical keypress check
+  (press F3, watch the layout change) remains — it needs Davood's hands; the
+  process-level effect is measured above.
+* Pitfalls recorded in `knowledges.md` §5: trailing-wildcard patterns for
+  quoted script paths; never reuse a parameter name as a local.
+
+### 0.7 Session history (compressed, sessions 2–7)
 
 * **Session 2 (2026-10-08) — ticket 01.** The Rust + Tauri shell builds and the
   first suites land; artefact `releases/rust/KomorebiDashboard.exe`

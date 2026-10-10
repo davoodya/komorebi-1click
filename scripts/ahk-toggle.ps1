@@ -38,11 +38,11 @@ $want = ($State -eq 'enabled')
 function Say($msg, $color = 'Gray') { Write-Host $msg -ForegroundColor $color }
 
 # --- read the current state, flip every script -------------------------
-$state = Get-AhkEnabledState -RepoRoot $RepoRoot
+$stateMap = Get-AhkEnabledState -RepoRoot $RepoRoot
 $changed = 0
-foreach ($name in @($state.Keys)) {
-    if ([bool]$state[$name] -ne $want) { $changed++ }
-    $state[$name] = $want
+foreach ($name in @($stateMap.Keys)) {
+    if ([bool]$stateMap[$name] -ne $want) { $changed++ }
+    $stateMap[$name] = $want
 }
 
 if ($changed -eq 0) {
@@ -54,7 +54,7 @@ Say ("[ahk-toggle] turning {0} script(s) {1} ..." -f $changed, $State) 'Cyan'
 
 # --- persist the state and regenerate AppRunner.vbs --------------------
 try {
-    Set-AhkEnabledState -RepoRoot $RepoRoot -State $state
+    Set-AhkEnabledState -RepoRoot $RepoRoot -State $stateMap
 } catch {
     Say "[ahk-toggle] could not write the state or regenerate AppRunner.vbs: $($_.Exception.Message)" 'Red'
     exit 1
@@ -72,7 +72,7 @@ function Find-AhkProcesses {
     $pattern = '*' + ($ScriptFile -replace '\.ahk$', '') + '*.ahk'
     return @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
-            ($_.CommandLine -like "*\$ScriptFile") -and
+            ($_.CommandLine -like "*\$ScriptFile*") -and
             ($_.CommandLine -like "*$ahkDir*")
         })
 }

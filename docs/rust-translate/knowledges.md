@@ -156,6 +156,17 @@ The Dashboard exposes **35** primary verbs organized into tabs:
   translated — so the two files provably describe the same configuration. The
   dev-tree source at `~/projects/komorebi-1click/cheatsheets/` is newer than the
   published copies; update from there.
+* **AHK lifecycle pitfalls (found live, 2026-10-10).** Two traps cost a debug
+  cycle each, and both now have static regression guards in
+  `tests/ticket08-ahk.tests.ps1` section 9: (1) a process-match `-like`
+  pattern that references a quoted script path must carry the trailing `*`
+  (`"...\ChangeLangF3.ahk*"`), otherwise it never matches the live command
+  line and a disable silently leaves the process running — the next enable
+  then starts a duplicate; (2) PowerShell variable names are case-insensitive,
+  so a local `$state` in a script whose param is `[ValidateSet] $State` IS
+  that parameter, and assigning to a ValidateSet variable re-runs the
+  attribute validation immediately — the assignment throws and the script dies
+  where it stands. Never reuse a parameter name as a local.
 * **The registry is the single source of truth** for verbs and tabs. Frontend and
   backend both derive from `registry.rs`; never maintain a second list. The verb
   count is 35 (asserted by

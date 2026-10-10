@@ -96,11 +96,14 @@ Say '[ahk-script] AppRunner.vbs regenerated' 'DarkGray'
 # --- act on the running process immediately -----------------------------
 # Match on the .ahk path under THIS repo's autohotkey\ dir only, so a script
 # the user runs from another directory is never touched even if the file
-# name is identical.
+# name is identical. The trailing * matters: the live command line quotes the
+# script path, so it ends with `.ahk"` — without the wildcard the pattern
+# matches nothing and a disable would leave the process running (and the next
+# enable would start a duplicate).
 $ahkDir = Join-Path $RepoRoot 'autohotkey'
 $procs  = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     Where-Object {
-        ($_.CommandLine -like "*\$($target.File)") -and
+        ($_.CommandLine -like "*\$($target.File)*") -and
         ($_.CommandLine -like "*$ahkDir*")
     })
 

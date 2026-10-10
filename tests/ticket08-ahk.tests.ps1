@@ -177,6 +177,39 @@ $sandboxCleanup = Join-Path $sb 'scripts\ahk-cleanup.ps1'
 & $sandboxCleanup -StartupDirOverride $sb | Out-Null
 Assert 'ahk-cleanup removed ahk-state.json' (-not (Test-Path -LiteralPath $stateFile))
 
+Write-Host ''
+Write-Host '--- 9. regression guards for the two live bugs found on 2026-10-10 ---'
+
+# Regression 1 - the process matcher must carry a trailing wildcard.
+# The live command line quotes the script path, so it ends with `.ahk"`;
+# a pattern ending at the file name matches NOTHING, disable left the
+# process running and the next enable started a duplicate. Every
+# CommandLine -like pattern that references the script file must end with *.
+foreach ($f in 'ahk-script.ps1','ahk-toggle.ps1','ahk-doctor.ps1','ahk-cleanup.ps1','ahk-uninstall.ps1') {
+    $src = Get-Content (Join-Path $repo "scripts\$f") -Raw
+    $bad = @()
+    foreach ($m in [regex]::Matches($src, '(?<=CommandLine\s+-like\s+")[^"]*(?=")')) {
+        if ($m.Value -match 'ScriptFile|target\.File|\$File' -and $m.Value -notmatch '\*$') { $bad += $m.Value }
+    }
+    Assert ("{0}: every script-file CommandLine pattern ends with a wildcard" -f $f) ($bad.Count -eq 0)
+    if ($bad.Count) { Write-Host ("    offenders: $($bad -join ', ')") -ForegroundColor Red }
+}
+
+# Regression 2 - a script that declares a [ValidateSet] $State parameter must
+# not have a bare '$state' local. PowerShell variable names are
+# case-insensitive, so '$state = <hashtable>' IS that parameter, and assigning
+# to a ValidateSet-decorated variable re-runs the attribute validation on the
+# spot: ahk-toggle.ps1 died at that line and every invocation exited 1 before
+# doing anything (ticket 08 E2E found this dead on the live machine).
+foreach ($f in 'ahk-toggle.ps1','ahk-script.ps1') {
+    $src = Get-Content (Join-Path $repo "scripts\$f") -Raw
+    $hasSet = $src -match '\[ValidateSet\(\s*''enabled''\s*,\s*''disabled''\s*\)\]\s*\[string\]\s*\$State'
+    if ($hasSet) {
+        $bare = [regex]::Matches($src, '\$state(?![A-Za-z])')
+        Assert ("{0}: no local collides with the ValidateSet State parameter" -f $f) ($bare.Count -eq 0)
+    }
+}
+
 # ===========================================================================
 Write-Host ''
 if ($script:failed -eq 0) {
