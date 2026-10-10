@@ -173,24 +173,29 @@ Assert ("all management scripts parse (failures: {0})" -f ($parseFail -join ', '
 
 Section 'T03-followup — the whkdrc bindings point at files the installer ships'
 
-function Get-TemplateText {
+function Get-TemplateLines {
     param([string]$RepoRelPath)
-    # Committed content when git can provide it, else the working copy.
+    # Committed content when git can provide it, else the working copy. Line
+    # ARRAYS, not reconstructed strings: git's stdout array and Get-Content
+    # both drop the terminator, so comparing joined forms cannot invent a
+    # difference out of nothing but the final newline.
     $git = Get-Command git -ErrorAction SilentlyContinue
     if ($git) {
         Push-Location $RepoRoot
         try {
             $head = & git show ("HEAD:{0}" -f ($RepoRelPath -replace '\\', '/')) 2>$null
-            if ($LASTEXITCODE -eq 0 -and $head) { return ($head -join "`n") }
+            if ($LASTEXITCODE -eq 0 -and $head) { return @($head) }
         } finally {
             Pop-Location
         }
     }
-    return (Get-Content -LiteralPath (Join-Path $RepoRoot $RepoRelPath) -Raw -Encoding UTF8)
+    return @(Get-Content -LiteralPath (Join-Path $RepoRoot $RepoRelPath) -Encoding UTF8)
 }
 
-$wtext    = Get-TemplateText 'config/whkdrc'
-$workText = Get-Content -LiteralPath (Join-Path $config 'whkdrc') -Raw -Encoding UTF8
+$headLines = Get-TemplateLines 'config/whkdrc'
+$workLines = @(Get-Content -LiteralPath (Join-Path $config 'whkdrc') -Encoding UTF8)
+$wtext     = ($headLines -join "`n")
+$workText  = ($workLines -join "`n")
 
 # 1. the binding must not be unbound by accident
 Assert 'alt + shift + o is bound (restart-whkd.cmd)' ($wtext -match '(?m)^alt \+ shift \+ o :')
