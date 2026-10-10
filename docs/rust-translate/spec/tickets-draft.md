@@ -6,7 +6,7 @@
 ## What changed from the original 12-ticket proposal
 
 - **Ticket 03 split into 03 (registry + CLI twin) and 04 (eight tabs).** It was the largest and
-  riskiest ticket: 28 verbs plus eight views plus the CLI in one context window. Splitting keeps each
+  riskiest ticket: 35 verbs plus eight views plus the CLI in one context window. Splitting keeps each
   slice sized for a fresh context window while both remain vertical — the CLI ticket's presentation
   surface is the CLI, which is a real surface under ADR-0013, and the tabs ticket's is the GUI.
 - Everything else kept the proposed order and edges. Test strategy confirmed as hybrid, with the CLI

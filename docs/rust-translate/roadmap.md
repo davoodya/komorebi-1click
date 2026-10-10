@@ -28,7 +28,7 @@ Target gains, taken from `handoff.md` §1 and re-measurable at the end:
 
 ## 1. Invariants that constrain every ticket
 
-1. **Script-first (ADR-0009):** the Rust core owns **no** system logic. 28 verbs → 62 existing
+1. **Script-first (ADR-0009):** the Rust core owns **no** system logic. 35 verbs → 62 existing
    `.ps1` scripts. No script is rewritten, no behaviour is reimplemented in Rust.
 2. **One registry table** feeds the GUI rows, the CLI dispatch and the `--help` text
    (ADR-0013). Adding a verb = one row.
@@ -88,7 +88,7 @@ Atomic, sequential, each with acceptance criteria + verification method. Propose
 | # | Ticket | Depends on |
 |---|---|---|
 | R01 | Tauri scaffold: project layout, Vite, `tauri.conf.json`, window + icons, build produces an exe in `releases/rust/` | — |
-| R02 | Rust core: registry (28 verbs) + `locate.rs` + `ScriptResult`, unit tests against the real script files | R01 |
+| R02 | Rust core: registry (35 verbs) + `locate.rs` + `ScriptResult`, unit tests against the real script files | R01 |
 | R03 | Process engine: async streaming, 50 ms batch emit, cancel, timeout, tree-kill, exit codes | R02 |
 | R04 | CLI twin: clap/parser from the same registry, `--help`, exit-code contract, Ctrl+C | R02 |
 | R05 | Settings store: JSON, defaults, clamping, atomic save, quarantine, IPC | R01 |
@@ -143,7 +143,7 @@ Ticket-by-ticket, each ending with runtime evidence.
 
 ## 6. Definition of done
 
-- [ ] All 8 tabs render and every one of the 28 verbs dispatches through the same registry.
+- [ ] All 8 tabs render and every one of the 35 verbs dispatches through the same registry.
 - [ ] CLI twin: `--help` generated from the registry; exit codes 0 / script / 740 / 2 / 127 proven.
 - [ ] `demo-stream` proves streaming with a responsive UI; cancel and timeout each kill the tree.
 - [ ] Elevation dialog matches ADR-0012 exactly; gate ordering asserted by a test.

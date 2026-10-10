@@ -7,7 +7,7 @@
   import { console_ } from './lib/console.svelte.ts';
   import { onOutput } from './lib/ipc';
   import { appInfo, type AppInfo } from './lib/ipc';
-  import { registry, rowsForTab, TRACER_TAB } from './lib/registry.svelte.ts';
+  import { registry, rowsForTab, CURRENT_TAB } from './lib/registry.svelte.ts';
   import { rowsFrom, type RowState } from './lib/rows.svelte.ts';
 
   let info = $state<AppInfo | null>(null);
@@ -15,7 +15,14 @@
   /** Plain cache, deliberately not reactive: rewriting it must not re-trigger. */
   let cache: RowState[] = [];
 
-  const visibleRows = $derived(rowsForTab(registry.verbs));
+  const visibleRows = $derived(rowsForTab(registry.verbs, CURRENT_TAB));
+
+  /**
+   * The heading of the rendered tab, from the backend's own tab list rather than
+   * from a second copy of the label. Falls back to the id so a strip that has not
+   * loaded yet still says something true.
+   */
+  const currentTab = $derived(registry.tabs.find((t) => t.id === CURRENT_TAB));
 
   // The registry arrives asynchronously, so rows are derived from it. Existing
   // RowState objects are reused, which is what keeps a typed value when the
@@ -63,11 +70,11 @@
 
   <div class="tab-strip" role="tablist" aria-label="Dashboard sections">
     <button class="tab-button" role="tab" type="button" aria-selected="true">
-      {TRACER_TAB.label}
+      {currentTab?.label ?? CURRENT_TAB}
     </button>
   </div>
 
-  <TabLayout title={TRACER_TAB.title} description={TRACER_TAB.description}>
+  <TabLayout title={currentTab?.label ?? CURRENT_TAB} description={currentTab?.description ?? ''}>
     {#if registry.error}
       <p class="tab-description console-line-stderr">
         Could not read the verb registry: {registry.error}

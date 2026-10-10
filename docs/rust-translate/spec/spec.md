@@ -108,7 +108,7 @@ measured 553 ms, and a UI that is easier to make beautiful without spending perf
     so that typing in one row never rewrites another.
 22. As a **Dashboard user**, I want arguments passed to a script in the registry-declared order with
     fixed arguments first, so that scripts bind their parameters correctly.
-23. As a **Dashboard user**, I want all 28 verbs reachable, including the ones that exist only for the
+23. As a **Dashboard user**, I want all 35 verbs reachable, including the ones that exist only for the
     CLI, so that nothing regresses against the current build.
 24. As a **Dashboard user**, I want the Settings tab to group rows into Startup tasks, Configuration,
     Appearance, Dashboard preferences and Reset, so that I can find a control without scanning.
@@ -276,7 +276,7 @@ measured 553 ms, and a UI that is easier to make beautiful without spending perf
 
 ### Behavioural contract
 
-1. **Script-first (ADR-0009) is not relaxed.** The Rust core owns no system logic. 28 verbs resolve to
+1. **Script-first (ADR-0009) is not relaxed.** The Rust core owns no system logic. 35 verbs resolve to
    the existing scripts. No `.ps1` file, installer step or config generator is modified.
 2. **One registry table** feeds four consumers: GUI rows, CLI dispatch, `--help` output, and the
    elevation dialog's feature list. It is the only place a verb is defined.
@@ -355,7 +355,7 @@ artwork is introduced.
 ### Feature parity
 
 Every feature of the .NET 8 WPF build ships, plus faster/better implementations of them. Nothing is
-dropped: all eight tabs, all 28 verbs, the CLI twin, elevation policy, theming, fonts, console
+dropped: all eight tabs, all 35 verbs, the CLI twin, elevation policy, theming, fonts, console
 behaviour, AHK staging, About actions and crash logging all remain.
 
 ## Testing Decisions

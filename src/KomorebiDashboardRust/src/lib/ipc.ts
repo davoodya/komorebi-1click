@@ -7,10 +7,10 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 /**
  * One registry declaration, exactly as Rust serializes it.
  *
- * The four optional fields are declared ahead of the tickets that populate
- * them (03 adds the tab grouping, admin/read-only gating and the numeric flag).
- * They are optional rather than required so this interface keeps describing what
- * the backend actually sends today instead of what it will send later.
+ * Ticket 03 landed the four grouping and gating fields, so they are required
+ * rather than optional: a registry row that arrives without its tab or its flags
+ * is a backend that is not the one this frontend was built against, and it is
+ * better for that to be a type error than a row rendered in the wrong place.
  */
 export interface VerbDefinition {
   verb: string;
@@ -22,14 +22,21 @@ export interface VerbDefinition {
   isReadOnly: boolean;
   acceptsArguments: boolean;
   hint: string;
-  /** Ticket 03: which tab owns the row. */
-  tab?: string;
-  /** Ticket 03: true when the script needs an elevated host (gate in 05). */
-  requiresAdmin?: boolean;
-  /** Ticket 03: digits-only value box. */
-  numericOnly?: boolean;
-  /** Ticket 03: false suppresses the row in favour of a more specific one. */
-  renderInGui?: boolean;
+  /** Which tab owns the row. Every verb appears under exactly one. */
+  tab: string;
+  /** True when the script needs an elevated host (the gate arrives with ticket 05). */
+  requiresAdmin: boolean;
+  /** Digits-only value box. */
+  numericOnly: boolean;
+  /** False suppresses the row in favour of a more specific one; the verb still dispatches. */
+  renderInGui: boolean;
+}
+
+/** One tab of the shell, as the backend declares it. */
+export interface TabDefinition {
+  id: string;
+  label: string;
+  description: string;
 }
 
 export interface OutputLine {
@@ -78,6 +85,16 @@ export function isTauri(): boolean {
 
 export function listVerbs(): Promise<VerbDefinition[]> {
   return invoke<VerbDefinition[]>('list_verbs');
+}
+
+/**
+ * The tabs, in the order they are drawn.
+ *
+ * The backend owns the list so the strip, `--help`'s groupings and the elevation
+ * message cannot disagree about what a tab is called or which verbs are under it.
+ */
+export function listTabs(): Promise<TabDefinition[]> {
+  return invoke<TabDefinition[]>('list_tabs');
 }
 
 export function appInfo(): Promise<AppInfo> {

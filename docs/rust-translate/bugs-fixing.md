@@ -80,3 +80,89 @@ This document aggregates and synthesizes all defects, architectural traps, edge 
 ### 2.6 WPF Window Misplacement under Komorebi (Session 4 `ignore-dashboard`)
 - **Symptom:** Komorebi attempts to manage and tile the Dashboard window, causing flickering or pushing it across monitor boundaries on 3-monitor setups.
 - **Solution:** A dedicated rule in `komorebi.json` under `ignore_rules` for the dashboard executable (`KomorebiDashboard.exe`, and in the future the Tauri executable `komorebi-dashboard.exe`).
+
+---
+
+## 3. Rust / Tauri Translation — Defects Found During Implementation
+
+### 3.1 Caller Budget Silently Ignored (Defect R1, ticket 03)
+
+- **Symptom:** `dashboard demo-stream -Lines 4000 -TimeoutSeconds 5` ran for the full
+  300 s default instead of being stopped after 5 s. No error, no warning — the run
+  simply ignored the budget the caller asked for.
+- **Root Cause:** `-TimeoutSeconds` belongs to the **caller**, not the script, so it
+  is stripped from the argument vector before dispatch (`strip_timeout_option`).
+  `execute()` sourced its budget from that same vector via `timeout_for(arguments)`.
+  Stripping first removed the only occurrence, so `timeout_for` always found nothing
+  and fell back to `DEFAULT_TIMEOUT` — silently, because "no option present" and
+  "option just removed" are indistinguishable at that point.
+- **Fix & Invariant:** Resolve the budget from the **original** arguments *before*
+  stripping, then pass it into `execute` explicitly as a parameter. The two can no
+  longer disagree, and `execute` cannot re-derive it from a vector it does not own.
+  Pinned by `a_caller_budget_is_read_before_the_option_is_stripped`, which asserts
+  both halves: the original yields 5 s, and the stripped vector yields the default.
+- **General rule:** When one piece of the input is consumed early, every value
+  derived from that input must be read *before* the consumption. "Parse, then
+  consume" — never "consume, then parse".
+
+### 3.2 `status` Was One Argument Away From Being an Admin Operation (Defect R2, ticket 03)
+
+- **Symptom:** `dashboard status -Action install` would have invoked
+  `komorebi-service.ps1 -Action status -Action install`, letting the last `-Action`
+  win — an administrative install triggered from an unprivileged read-only health
+  check, with no elevation gate in front of it.
+- **Root Cause:** The registry declares `status` with `RequiresAdmin: false` (it is
+  read-only) **and** the fixed arguments `-Action status`. A naive "does this verb
+  take arguments?" test written as `arguments.is_empty()` counts the **fixed**
+  arguments too, so a verb carrying the most dangerous fixed flags is exactly the
+  one that gets exempted — backwards.
+- **Fix & Invariant:** Decide the rule from the declared **shape**, not from the
+  vector: a verb takes user arguments only if its shape mentions a value
+  (`accepts_user_arguments`, i.e. `<...>` or `[...]`). `fixed_arguments` must never
+  satisfy that test. When the shape declares no value and arguments were supplied,
+  refuse with exit 2 *before* launching anything.
+- **Note:** `status` also demonstrates why refusal must name the verb: the message
+  and the usage line are what tell the user which row rejected them.
+
+### 3.3 Console Control Events Are Undeliverable on a ConPTY Host (Defect R3, ticket 03 / US 55)
+
+- **Symptom:** A real interrupt test for `Ctrl+C cancels the child` could not
+  produce a delivered event. The signal call returned success while the child never
+  received anything, so a naive test would either hang or assert a false pass.
+- **Root Cause:** The session runs on a **ConPTY pseudo-console**:
+  `GetConsoleWindow() == 0`, `GetConsoleProcessList` reports only the calling
+  process, and `AllocConsole()` fails with `ERROR_ACCESS_DENIED (5)`. Windows does
+  not deliver `GenerateConsoleCtrlEvent` to a process group on that topology. With
+  `CREATE_NO_WINDOW` — the flag the child launcher actually uses — the call itself
+  fails with `ERROR_INVALID_HANDLE (6)`.
+- **Measured, four topologies:** sharing the harness console, `CREATE_NEW_CONSOLE`,
+  `CREATE_NEW_CONSOLE` + `AttachConsole` (which itself returned
+  `ERROR_ACCESS_DENIED`), and `CREATE_NO_WINDOW`. **None** delivered an event, with
+  a child that installed a real `SetConsoleCtrlHandler` and wrote a marker file the
+  instant one arrived — so "no marker" is evidence, not an assumption.
+- **Invariant:** A test for an OS delivery mechanism must **prove delivery** (a
+  handler-installed marker), never infer it from the signal call returning success
+  or from the child happening to die. Where the host cannot deliver the event, the
+  suite reports `SKIP` with the measured OS error and the harness to run it in a
+  real console — a skip is honest, a false pass is not.
+- **Related trap (avoided on purpose):** `AttachConsole` rebinds this process's
+  standard handles onto the console it attaches to, so calling it unconditionally
+  **destroys output capture** — `dashboard status | grep up` would return nothing.
+  The WPF build documented this and attached never; the Rust CLI attaches only when
+  `GetConsoleWindow()` is null *and* stdout is a real terminal, giving up
+  interruptibility rather than losing redirected output.
+
+### 3.4 The Tracer's Placeholder Became a Security Regression When the Table Grew (Defect R4, ticket 03)
+
+- **Symptom:** After the registry grew from 2 verbs to 35, the GUI tab would have
+  drawn an administrative verb (`uninstall`) inside the **Debugging** tab.
+- **Root Cause:** The ticket-01 tracer placeholder returned the **whole** table as
+  the current tab's rows. That was byte-for-byte correct with two verbs and wrong
+  the moment the table had more than one tab's worth.
+- **Fix & Invariant:** Rows come from `rowsForTab(verbs, tab)`, filtering on the
+  registry's own `tab` field **and** `render_in_gui`. The frontend test asserts a
+  read-only tab can never contain a `requires_admin` row, and that a CLI-only verb
+  (`startup`, superseded by `startup-install` / `startup-remove`) draws no row.
+- **General rule:** A placeholder that happens to be correct for the sample size is
+  not correct — when the real data arrives, re-read every placeholder that returned
+  "all of it" and ask which subset it was actually standing in for.

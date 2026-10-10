@@ -13,6 +13,10 @@ function verb(overrides: Partial<VerbDefinition> = {}): VerbDefinition {
     isReadOnly: true,
     acceptsArguments: false,
     hint: '',
+    tab: 'Debugging',
+    requiresAdmin: false,
+    numericOnly: false,
+    renderInGui: true,
     ...overrides
   };
 }

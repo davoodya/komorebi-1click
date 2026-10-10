@@ -1,3 +1,6 @@
+pub mod registry;
+
+use registry::Verb;
 use serde::Serialize;
 use std::{
     collections::HashMap,
@@ -44,6 +47,37 @@ pub fn timeout_for(arguments: &[String]) -> Duration {
         }
     }
     DEFAULT_TIMEOUT
+}
+
+/// Remove the caller-side `-TimeoutSeconds <n>` pair from a request.
+///
+/// It is the caller's option, not the script's. Forwarding it would make every
+/// script fail parameter binding on an option it never declared, and dropping a
+/// bare `-TimeoutSeconds` with no value keeps a malformed pair from reaching the
+/// script as a stray token. An invalid value is dropped too, so the run falls
+/// back to the default budget instead of being refused.
+///
+/// Only the FIRST pair is removed: the argument is a single budget for the run,
+/// and `timeout_for` reads the same first occurrence, so the two cannot disagree.
+pub fn strip_timeout_option(arguments: &[String]) -> Vec<String> {
+    let mut forwarded = Vec::with_capacity(arguments.len());
+    let mut index = 0;
+    while index < arguments.len() {
+        if arguments[index].eq_ignore_ascii_case("-TimeoutSeconds") {
+            // Skip the flag; skip its value only when one is actually there.
+            if index + 1 < arguments.len() {
+                index += 2;
+            } else {
+                index += 1;
+            }
+            break;
+        }
+        forwarded.push(arguments[index].clone());
+        index += 1;
+    }
+    // Anything after the option is kept; only the pair itself is consumed.
+    forwarded.extend_from_slice(&arguments[index.min(arguments.len())..]);
+    forwarded
 }
 
 /// Live runs that a `cancel` can reach, keyed by run id.
@@ -229,17 +263,14 @@ impl Outcome {
     }
 }
 
+/// Rendered help, generated from the registry table.
+///
+/// Ticket 01 hard-coded a `Debugging:` heading and the `demo-stream` argument
+/// list here, because with two verbs there was nothing to generalise. With the
+/// full registry that would be a second, hand-maintained copy of the table —
+/// exactly what ADR-0013 forbids — so the text now comes from the rows.
 pub fn help() -> String {
-    let mut text = String::from(
-        "Komorebi Admin Dashboard\nUsage: KomorebiDashboard <verb> [arguments]\n\nDebugging:\n",
-    );
-    for verb in registry() {
-        text.push_str(&format!("  {:16} {} [read-only]\n", verb.verb, verb.help));
-    }
-    text.push_str(
-        "\ndemo-stream arguments: -Lines <n> -DelayMs <ms> -StdErrEvery <n> -FailWith <code>\n",
-    );
-    text
+    registry::build_help()
 }
 
 pub fn locate_scripts(executable: &Path) -> PathBuf {
@@ -301,27 +332,88 @@ pub async fn run<F: FnMut(OutputBatch)>(
     run_id: &str,
     emit: F,
 ) -> ScriptResult {
-    let verb = match registry()
-        .iter()
-        .find(|v| v.verb.eq_ignore_ascii_case(requested))
-    {
-        Some(verb) => verb,
-        None => {
-            return ScriptResult::error(
-                requested,
-                run_id,
-                2,
-                format!("Unknown verb '{requested}'.\n{}", help()),
-            )
-        }
-    };
-    // The health tracer must never accept -Action install/restart from either surface.
-    if verb.verb == "status" && !arguments.is_empty() {
+    let Some(mut verb) = registry::find(requested) else {
         return ScriptResult::error(
             requested,
             run_id,
             2,
-            "status accepts no arguments.\n".to_owned() + &help(),
+            format!("Unknown verb '{requested}'.\n{}", help()),
+        );
+    };
+
+    // ADR-0013 spells the per-script forms `ahk enable <name>` and
+    // `ahk disable <name>`, while `ahk on|off` toggles all three. The registry
+    // stores the per-script forms as their own rows so each is a real row with
+    // its own help, and the two-part spelling is folded onto that row here —
+    // before the argument guards, so `ahk enable autocorrect` is judged by the
+    // row it actually resolves to rather than by `ahk`'s own shape.
+    let mut arguments = arguments.to_vec();
+    if verb.verb == "ahk" && !arguments.is_empty() {
+        let folded = match arguments[0].to_ascii_lowercase().as_str() {
+            "enable" => Some("ahk-enable"),
+            "disable" => Some("ahk-disable"),
+            _ => None,
+        };
+        if let Some(row) = folded.and_then(registry::find) {
+            verb = row;
+            arguments.remove(0);
+        }
+    }
+    // `-TimeoutSeconds` belongs to the CALLER, not to the script: it bounds this
+    // invocation so a hung script cannot hang the shell that ran it. It is
+    // consumed here rather than forwarded, because the scripts would reject an
+    // option they never declared — and consumed BEFORE the guards below, so a
+    // bare `status -TimeoutSeconds 5` is refused for the argument it actually
+    // forwarded rather than for the budget itself.
+    //
+    // The budget is read from the ORIGINAL arguments first. Reading it after the
+    // strip would always find nothing and silently fall back to the default,
+    // which is how a caller's own timeout gets ignored without any error.
+    let budget = timeout_for(&arguments);
+    let arguments = strip_timeout_option(&arguments);
+    let arguments = arguments.as_slice();
+    // Two requests are refused before anything can be launched, in this order.
+    //
+    // First: a verb whose declared shape REQUIRES a value, sent bare. It is a
+    // request for help, not a dispatch — running it would hand the script a
+    // missing argument, which is how a parameter-binding failure gets reported
+    // as if the operation itself had failed.
+    if arguments.is_empty() && verb.requires_a_value() {
+        return ScriptResult::error(
+            requested,
+            run_id,
+            2,
+            format!(
+                "'{}' needs a value and was given none.\nUsage: {}\n{}",
+                verb.verb,
+                verb.usage(),
+                help()
+            ),
+        );
+    }
+    // Second: a verb whose declared shape mentions no value must accept no
+    // arguments at all. `fixed_arguments` is deliberately NOT part of this test:
+    // those are the registry's own arguments, and letting them satisfy the check
+    // would be exactly backwards — it would exempt the verbs that carry the most
+    // dangerous fixed flags.
+    //
+    // `status` is the case that matters. It declares the fixed
+    // `-Action status`, `RequiresAdmin: false`, and it is reached from a row with
+    // no value box, so accepting `-Action install` here would turn an
+    // unprivileged health check into an administrative operation with no
+    // elevation gate in front of it — the gate arrives with ticket 05, and until
+    // then the safe behaviour is to refuse.
+    if !arguments.is_empty() && !verb.accepts_user_arguments() {
+        return ScriptResult::error(
+            requested,
+            run_id,
+            2,
+            format!(
+                "'{}' accepts no arguments.\nUsage: {}\n{}",
+                verb.verb,
+                verb.usage(),
+                help()
+            ),
         );
     }
     let script = scripts.join(verb.script);
@@ -333,7 +425,7 @@ pub async fn run<F: FnMut(OutputBatch)>(
             format!("Script not found: {}", script.display()),
         );
     }
-    let outcome = execute(&script, verb, arguments, run_id, emit).await;
+    let outcome = execute(&script, verb, arguments, budget, run_id, emit).await;
     // Read the verdict before moving the outcome's fields into the result.
     let state = outcome.state();
     ScriptResult {
@@ -371,6 +463,7 @@ pub async fn execute<F: FnMut(OutputBatch)>(
     script: &Path,
     verb: &Verb,
     arguments: &[String],
+    budget: Duration,
     run_id: &str,
     mut emit: F,
 ) -> Outcome {
@@ -455,7 +548,6 @@ pub async fn execute<F: FnMut(OutputBatch)>(
 
     let cancel_rx = arm_run(run_id);
     let _registration = RunRegistration(run_id);
-    let budget = timeout_for(arguments);
     let deadline = tokio::time::sleep(budget);
     tokio::pin!(deadline);
     tokio::pin!(cancel_rx);
@@ -559,44 +651,9 @@ pub async fn execute<F: FnMut(OutputBatch)>(
     }
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Verb {
-    pub verb: &'static str,
-    pub script: &'static str,
-    pub label: &'static str,
-    pub help: &'static str,
-    pub fixed_arguments: &'static [&'static str],
-    pub action_label: &'static str,
-    pub is_read_only: bool,
-    pub accepts_arguments: bool,
-    pub hint: &'static str,
-}
-
+/// Every registered verb. Kept as a re-export so callers that already name
+/// `dashboard_core::registry()` keep working while the table itself lives in its
+/// own module.
 pub fn registry() -> &'static [Verb] {
-    static VERBS: [Verb; 2] = [
-        Verb {
-            verb: "status",
-            script: "komorebi-service.ps1",
-            label: "Status",
-            help: "Read-only health check",
-            fixed_arguments: &["-Action", "status"],
-            action_label: "Check",
-            is_read_only: true,
-            accepts_arguments: false,
-            hint: "",
-        },
-        Verb {
-            verb: "demo-stream",
-            script: "demo-stream.ps1",
-            label: "Demo Stream",
-            help: "Chatty output stream: proves no-lag streaming",
-            fixed_arguments: &[],
-            action_label: "Stream",
-            is_read_only: true,
-            accepts_arguments: true,
-            hint: "Number of lines (default 50)",
-        },
-    ];
-    &VERBS
+    registry::registry()
 }

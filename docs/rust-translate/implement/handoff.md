@@ -1,5 +1,172 @@
 # Rust translation implementation handoff
 
+## 2026-10-09 (session 3) — Ticket 03 complete and verified, except US 55's delivery proof
+
+Ticket `03-registry-cli-twin` is **implemented and verified against the published
+artefact**. All seven of its acceptance criteria are met; the one carried-over
+item (US 55, Ctrl+C) is implemented and wired to the same cancel path the window
+uses, but its *delivery* could not be proven in this session because the host
+cannot deliver a console control event — measured, not assumed, and reported as a
+`SKIP` rather than a pass. Details in "US 55" below. **The next ticket is
+`04-eight-tabs`.**
+
+Artefact: `releases/rust/KomorebiDashboard.exe` — **13,852,160 bytes** (debug
+profile; the release build is phase 4 of `build.ps1`). The WPF
+`releases/KomorebiDashboard.exe` (170,176,020 bytes) remains untouched.
+
+### What was built
+
+The registry is now the **single table** of 35 verbs, and both surfaces read it:
+
+* `src-tauri/src/registry.rs` (**new**) — all **35** verbs with tab, label, help,
+  script, argument shape, fixed arguments, and the `is_read_only` / `requires_admin`
+  / `numeric_only` / `render_in_gui` flags. Plus the 8-entry `TABS` table and
+  `render_help`, which generates `--help` from the rows (grouped by tab, `[admin]`
+  suffix, fixed-width usage column, and the same four "Notes" lines the WPF
+  builder emitted). `registry::find`, `verbs_in_tab`, `rows_in_tab`.
+* `src-tauri/src/lib.rs` — `run()` resolves through the registry instead of a
+  two-verb stub; help is generated, never hand-written; the two refusals are
+  decided **before** anything is launched (see the ordering note below);
+  `strip_timeout_option` consumes the caller's `-TimeoutSeconds`; `ahk enable
+  <key>` / `ahk disable <key>` fold onto their own rows (ADR-0013).
+* `src-tauri/src/main.rs` — `list_tabs` command; the CLI path became `run_cli`,
+  which selects on `tokio::signal::ctrl_c()` and calls the existing
+  `request_cancel("cli")` so the tree kill and exit code stay in one place;
+  `console::ensure_console` attaches the parent console **only** when stdout is a
+  real terminal (see the capture trap below).
+* `src/lib/{ipc,registry.svelte,App}.ts`/`.svelte` — `TabDefinition` + `listTabs`;
+  the four former optional fields are now **required**, so a row missing its tab
+  is a type error rather than a row drawn in the wrong place; `rowsForTab` filters
+  by tab **and** `renderInGui`.
+
+### Evidence (measured, against the published artefact)
+
+```text
+cargo test --locked --no-default-features   exit 0    24 passed / 0 failed
+cargo fmt --check                           exit 0
+cargo clippy --locked --all-targets -D warnings  exit 0    no warnings
+npm run check                               exit 0    0 errors, 0 warnings
+npm test                                    exit 0    49 passed / 0 failed
+tests/rust-ticket03-interrupt.mjs           exit 0    8 passed, 1 skipped, 0 failed
+tests/rust-ticket01-cli.mjs                 exit 0    6/6   (regression)
+tests/check-shipped-text.mjs                exit 0    190 files, no foreign script
+```
+
+The numbers that matter, and where they came from:
+
+| Fact | Measured |
+| --- | --- |
+| Verbs in the registry | **35** (31 GUI rows + 4 CLI-only) |
+| Verbs rendered by `--help` | **35** — the whole set, no second copy |
+| Tabs carrying verbs | **6 of 8** (Customization and About are hand-built) |
+| Admin verbs | **10** |
+| Read-only verbs | **6** |
+| Distinct `.ps1` files reached | **22** |
+| Unknown verb | exit **2**, `Unknown verb '...'` + usage on **stderr** |
+| A verb that declares no value, given one | exit **2** |
+| A verb that requires a value, sent bare | exit **2** |
+| Missing script | exit **127**, path named, nothing launched |
+| `ahk enable <key>` folded | resolves to `ahk-enable` (proven by its refusal of a missing key) |
+| `-TimeoutSeconds` | consumed by the caller, never forwarded, budget still honoured |
+
+The registry suite asserts the counts **from the table**, not from a literal in a
+document, and cross-checks them against the numbers ADR-0018 records. A row added
+without updating the docs fails `the_documented_counts_are_the_counts_the_table_actually_has`.
+
+### US 55 — Ctrl+C cancels the child: implemented, delivery not provable here
+
+The implementation is complete and wired to the one stop path that already exists
+(`request_cancel("cli")` → tree kill → exit **130**), so there is no second stop
+mechanism to keep correct. What could **not** be produced is the "real interrupt
+test" the ticket asks for, and the reason is a measured property of this host:
+
+```text
+GetConsoleWindow()        -> 0        (no console is attached)
+AllocConsole()            -> False,   ERROR_ACCESS_DENIED (5)
+GetConsoleProcessList()   -> 1        (this process only; a ConPTY pseudo-console)
+```
+
+The session runs on a **ConPTY pseudo-console**, and Windows does not deliver
+`GenerateConsoleCtrlEvent` to a process group there. Four topologies were probed
+with a child that installs a real `SetConsoleCtrlHandler` and writes a marker file
+the instant an event arrives, so "delivered" means a marker on disk and not a
+lucky termination:
+
+| Case | Spawn flags | Signal call | Event received |
+| --- | --- | --- | --- |
+| shares the harness console | `CREATE_NEW_PROCESS_GROUP` | ok | **no** |
+| own new console | `+ CREATE_NEW_CONSOLE` | ok | **no** |
+| own new console, harness then attaches | `+ CREATE_NEW_CONSOLE` | ok | **no** (`AttachConsole` → `ERROR_ACCESS_DENIED`) |
+| `CREATE_NO_WINDOW` (what the launcher uses) | `+ CREATE_NO_WINDOW` | **fails, `ERROR_INVALID_HANDLE` (6)** | **no** |
+
+So `tests/rust-ticket03-interrupt.mjs` reports `SKIP` with the measured error
+rather than asserting a pass it cannot earn. **To convert it to a PASS: run it
+from a real interactive console** (`node tests\rust-ticket03-interrupt.mjs` in a
+normal PowerShell window). The other eight cases in that file pass in this
+session, including the invariant that a cancelled run leaves **0** fixture
+processes behind.
+
+A related trap the implementation deliberately avoids, because the WPF build
+documented it: **`AttachConsole` rebinds stdout onto the attached console, so
+calling it unconditionally destroys output capture.** `dashboard status | grep up`
+would return nothing. `console::ensure_console` therefore attaches **only** when
+`GetConsoleWindow()` is null *and* stdout is a real terminal; a redirected run
+keeps its pipes and gives up interruptibility instead of losing its output.
+
+### Two pitfalls found by implementing (both now encoded)
+
+1. **The budget must be read before the option is stripped.** `-TimeoutSeconds` is
+   the caller's option and is removed before dispatch — but `execute()` sourced
+   the budget from those same arguments, so stripping first silently reverted every
+   caller-specified timeout to the 300 s default. It failed the timeout tests
+   immediately. The fix resolves the budget from the **original** arguments and
+   passes it into `execute` explicitly; a regression test pins the ordering.
+2. **`status` declares `RequiresAdmin: false` but carries the fixed
+   `-Action status`.** It is the case that makes the no-arguments rule matter:
+   accepting `status -Action install` would turn an unprivileged health check into
+   an administrative operation with no elevation gate in front of it (that gate is
+   ticket 05). `fixed_arguments` is deliberately **not** counted when deciding
+   whether a verb takes user arguments, or the check would exempt exactly the verbs
+   carrying the most dangerous fixed flags.
+
+### Where the guard order lives (do not reorder)
+
+In `run()`, in this order: (1) unknown verb → 2; (2) `ahk` two-part fold;
+(3) read the budget; (4) strip `-TimeoutSeconds`; (5) a verb declaring a
+**required** value sent bare → 2; (6) a verb declaring **no** value given one → 2;
+(7) missing script → 127; (8) dispatch. Steps 5 and 6 must stay **after** step 4 or
+a legitimate `-TimeoutSeconds` is refused as if it were a script argument.
+
+### Files changed in this session
+
+```text
+src/KomorebiDashboardRust/src-tauri/src/registry.rs          (new, the 35-verb table + TABS + render_help)
+src/KomorebiDashboardRust/src-tauri/src/lib.rs               (registry-driven run, guards, fold, timeout strip)
+src/KomorebiDashboardRust/src-tauri/src/main.rs              (list_tabs, run_cli, console::ensure_console)
+src/KomorebiDashboardRust/src-tauri/tests/registry.rs        (new, 11 tests incl. the extension rule)
+src/KomorebiDashboardRust/src-tauri/tests/dispatch.rs        (tracer assertions retired to the registry suite)
+src/KomorebiDashboardRust/src/lib/ipc.ts                     (TabDefinition, listTabs, required flags)
+src/KomorebiDashboardRust/src/lib/registry.svelte.ts         (tabs state, rowsForTab by tab + renderInGui)
+src/KomorebiDashboardRust/src/App.svelte                     (current tab from the backend's tab list)
+src/KomorebiDashboardRust/src/tests/registry.spec.ts         (new, 5 frontend grouping tests)
+src/KomorebiDashboardRust/src/tests/rows.spec.ts             (test helper carries the required flags)
+tests/rust-ticket03-interrupt.mjs                            (new, the US 55 + CLI-contract harness)
+docs/rust-translate/spec/ADR-0018-stabilization-decisions.md (verb count 35, CI, settings compat)
+```
+
+### Not done here, and carried forward
+
+* **Ticket 04 (`04-eight-tabs`)** owns the real eight-tab strip. Until it lands the
+  shell renders **one** tab (`CURRENT_TAB = 'Debugging'`) and that tab's own rows —
+  which is the point: the tracer's placeholder returned the whole table, exact with
+  two verbs and wrong with 35.
+* **Ticket 05** owns the elevation gate. `requires_admin` is now on every verb and
+  reachable from the frontend, which is what that ticket needs; the CLI still
+  dispatches an admin verb without refusing (the WPF build gated here, so this is a
+  live parity gap, recorded rather than hidden).
+
+---
+
 ## 2026-10-08 (session 2b) — Ticket 02 complete and verified
 
 Ticket `02-execution-contract` is **done and verified against the published

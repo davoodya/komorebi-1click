@@ -63,7 +63,7 @@ When an administrative script must be run directly from the Dashboard (e.g., ins
 
 ## 3. Shipped Management Scripts & Verb Registry
 
-The Dashboard exposes 28 primary verbs organized into tabs:
+The Dashboard exposes **35** primary verbs organized into tabs:
 
 ### Tab 1: Kill and Start (`Tabs.KillStart`)
 - `kill-all`: Stop Komorebi, WHKD, and YASB (`kill-all.ps1 -Components all`).
@@ -135,3 +135,29 @@ The Dashboard exposes 28 primary verbs organized into tabs:
 2. **Process Tree Lifecycle & Cancellation**: When an execution is cancelled or times out, the entire process tree must be cleanly terminated (e.g. `taskkill /F /T /PID` on Windows or job objects in Rust).
 3. **Stream Throttling**: Standard output and error streams must be buffered and throttled (~30–50ms intervals) before broadcasting to the frontend, preventing event queue flooding during high-volume logs.
 4. **Guaranteed Cleanup**: Named pipes, mutexes, and temporary files must be tracked and freed upon application exit.
+
+---
+
+## 5. Test thresholds and the cheatsheets
+
+* **Timing assertions are dual-mode** (ADR-0019). `tests/rust-ticket02-probe.ps1`
+  takes a threshold mode: **strict** is the default and the only mode a release may
+  pass; **relaxed** is opt-in (`-Relaxed`, `-ThresholdMode relaxed`, or
+  `DASHBOARD_THRESHOLD_MODE`) for a busy local machine, and the mode is recorded
+  with the result so a relaxed pass is never mistaken for a strict one. The probe
+  prints its mode on line 1 and carries it in every assertion message; `-Strict`
+  conflicting with a relaxed parameter exits 3. Note
+  `DASHBOARD_THRESHOLD_MODE` does not cross the WSL→Windows interop boundary —
+  pass the parameter explicitly from WSL.
+* **Cheatsheets are bilingual** (ADR-0020). Each lives as
+  `cheatsheets/fa/<name>.md` (Persian, authoritative) and
+  `cheatsheets/en/<name>.md` (English, translated), cross-linked in the header.
+  Hotkeys and commands are copied verbatim — only the description column is
+  translated — so the two files provably describe the same configuration. The
+  dev-tree source at `~/projects/komorebi-1click/cheatsheets/` is newer than the
+  published copies; update from there.
+* **The registry is the single source of truth** for verbs and tabs. Frontend and
+  backend both derive from `registry.rs`; never maintain a second list. The verb
+  count is 35 (asserted by
+  `the_documented_counts_are_the_counts_the_table_actually_has`, which derives it
+  from the table — do not hand-count).
