@@ -1,4 +1,5 @@
 pub mod registry;
+pub mod settings;
 
 use registry::Verb;
 use serde::Serialize;

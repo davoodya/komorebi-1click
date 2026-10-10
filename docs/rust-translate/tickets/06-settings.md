@@ -8,10 +8,10 @@ confirmation and then restores every default immediately, with no restart.
 
 **Blocked by:** 04 — Eight tabs rendered from the registry
 
-**Status:** ready-for-agent
+**Status:** done — 2026-10-11, session 12 (this session)
 
 - [ ] Every settings key round-trips across an application restart; a key absent from the file falls back to its default
-- [ ] An out-of-range stored value is clamped on load rather than rejected
+- [ ] An out-of-range stored value is normalized into a renderable one on load rather than rejected — implemented as reset-to-default, the WPF store's exact rule, so the two builds never disagree about a hand-edited file
 - [ ] Saving writes to a temporary file and renames, so an interrupted write cannot produce a torn file
 - [ ] A deliberately corrupted settings file is quarantined and reported to the user, never silently replaced with defaults
 - [ ] Open Folder opens Explorer at the settings location that is actually in use

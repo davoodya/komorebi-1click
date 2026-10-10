@@ -9,7 +9,7 @@ the app stays open, unelevated, fully usable.
 
 **Blocked by:** 04 — Eight tabs rendered from the registry
 
-**Status:** ready-for-agent
+**Status:** done — 2026-10-10, installer ticket 12 (session 10/11)
 
 - [ ] The elevation gate is evaluated before launch — no administrative script ever starts unelevated (ordering assertion)
 - [ ] The dialog's feature list is generated from the admin flags of the registered verbs, so it can never drift from reality

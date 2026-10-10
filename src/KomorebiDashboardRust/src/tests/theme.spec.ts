@@ -6,8 +6,15 @@
 // document, and remembering it across restarts. The parse/apply logic is pure
 // over (storage, document) so a corrupted or missing stored value can be
 // tested to fall back to the default rather than to a blank shell.
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { applyAppearance, readAppearance, resolveTheme } from '../lib/theme';
+import {
+  CUSTOM_ACCENT_SEED,
+  applyAppearance,
+  readAppearance,
+  resolveTheme
+} from '../lib/theme';
 
 describe('reading a stored appearance', () => {
   it('falls back to the documented defaults when nothing is stored', () => {
@@ -73,6 +80,37 @@ describe('applying an appearance to the document', () => {
     expect(root.style.colorScheme).toBe('light');
     applyAppearance(root, 'dark', 'Blue');
     expect(root.style.colorScheme).toBe('dark');
+  });
+});
+
+// Ticket 07 — the custom accent: one seed hex declared in BOTH files the
+// runtime touches, and the selector the runtime sets when the accent is a hex.
+describe('the custom accent', () => {
+  const css = readFileSync(resolve(process.cwd(), 'src/app.css'), 'utf8');
+  let root: HTMLElement;
+
+  beforeEach(() => {
+    document.documentElement.removeAttribute('data-accent');
+    document.documentElement.style.removeProperty('--accent-custom');
+    root = document.documentElement;
+  });
+
+  it('keeps the custom-accent seed identical in CSS and runtime', () => {
+    // One value, two files, this test is the seam: the runtime writes the
+    // seed into --accent-custom, and the CSS declares that very seed.
+    expect(css).toContain('--accent-custom: ' + CUSTOM_ACCENT_SEED);
+    expect(css).toContain('[data-accent="Custom"]');
+  });
+
+  it('applies a custom hex accent as the Custom selector plus the runtime property', () => {
+    applyAppearance(root, 'dark', '#3fa9f5');
+    expect(root.dataset.accent).toBe('Custom');
+    expect(root.style.getPropertyValue('--accent-custom')).toBe('#3FA9F5');
+    // A named accent CLEARS the runtime property, so switching back cannot
+    // leave a stale hex overriding the swatch.
+    applyAppearance(root, 'dark', 'Teal');
+    expect(root.dataset.accent).toBe('Teal');
+    expect(root.style.getPropertyValue('--accent-custom')).toBe('');
   });
 });
 

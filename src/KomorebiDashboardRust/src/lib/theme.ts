@@ -18,10 +18,49 @@ export function parseStoredTheme(raw: string | null): string | null {
   return raw === 'dark' || raw === 'light' ? raw : null;
 }
 
+// The eight shipped accents come from tokens.ts — the SAME table the CSS
+// declares and tokens.spec.ts pins. A second list here is a list that can
+// drift, and a drifted swatch is an unstyled shell.
+import { ACCENTS } from './tokens';
+
 /** A stored accent, or null when it is absent or not one of the shipped swatches. */
 export function parseStoredAccent(raw: string | null): string | null {
-  const accents = ['Blue', 'Indigo', 'Violet', 'Rose', 'Amber', 'Emerald', 'Teal', 'Slate'];
-  return raw !== null && accents.includes(raw) ? raw : null;
+  return raw !== null && (ACCENTS as readonly string[]).includes(raw) ? raw : null;
+}
+
+/**
+ * Ticket 07 — the "Toggle Color" switch: the next accent in the cycle, or the
+ * first when the current value is anything else (a hex behind the Custom
+ * sentinel, or a value the CSS never declared). The toggle therefore always
+ * LANDS on a declared swatch rather than stopping on an unstyled value.
+ */
+export function nextAccent(current: string | null): string {
+  if (current === null || !parseStoredAccent(current)) return ACCENTS[0];
+  const at = (ACCENTS as readonly string[]).indexOf(current);
+  return ACCENTS[(at + 1) % ACCENTS.length];
+}
+
+/** The seed for a custom accent — one value, referenced by the store and pinned to the CSS. */
+export const CUSTOM_ACCENT_SEED = '#4F8FFF';
+
+/** Is this value a custom hex accent rather than one of the eight names? */
+export function isHexAccent(value: string): boolean {
+  return HEX_RE.test(value);
+}
+
+const HEX_RE = /^#[0-9a-f]{6}$/i;
+
+/**
+ * A stored custom accent: '#rrggbb', normalized to uppercase, or null when it
+ * is absent or malformed. A three-digit hex is REJECTED, not expanded — the
+ * value lands in CSS, where '#abc' is ambiguous next to the eight declared
+ * swatches, and the WPF store keeps its hex six-digit too.
+ */
+export function parseStoredAccentHex(raw: string | null): string | null {
+  if (raw === null) return null;
+  const value = raw.trim();
+  if (!HEX_RE.test(value)) return null;
+  return value.toUpperCase();
 }
 
 /**
@@ -50,9 +89,20 @@ export function resolveTheme(theme: string): string {
  * this is the only place the document's appearance is set. The inline
  * `color-scheme` is the browser's hint for form controls and scrollbars, which
  * do not read custom properties.
+ *
+ * Ticket 07 — a CUSTOM accent arrives as a '#rrggbb' value: the selector
+ * becomes `Custom` (which the CSS declares to read the runtime property) and
+ * the hex is written to `--accent-custom`, so the derived companions
+ * (soft/faint/border) follow automatically through the CSS.
  */
 export function applyAppearance(root: HTMLElement, theme: string, accent: string): void {
   root.dataset.theme = theme;
-  root.dataset.accent = accent;
+  if (isHexAccent(accent)) {
+    root.dataset.accent = 'Custom';
+    root.style.setProperty('--accent-custom', accent.toUpperCase());
+  } else {
+    root.dataset.accent = accent;
+    root.style.removeProperty('--accent-custom');
+  }
   root.style.colorScheme = theme;
 }

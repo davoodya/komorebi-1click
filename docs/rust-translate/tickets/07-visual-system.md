@@ -7,7 +7,7 @@ Mica, Acrylic or vibrancy effect exists anywhere in the app.
 
 **Blocked by:** 01 — Scaffold and the first tracer bullet
 
-**Status:** ready-for-agent
+**Status:** done — 2026-10-11, session 12 (this session)
 
 - [ ] Both themes render correctly across all eight tabs — a blank or black window (D21) is an automatic failure
 - [ ] The selected accent reaches the selected tab, buttons, badges and the header band

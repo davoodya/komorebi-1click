@@ -18,7 +18,7 @@ production reference machine. The automatic list below was audited against it.
 All commands run from WSL through `~/.hermes/scripts/win-exec.sh pwsh '<script>'`; logs land in
 `tests/.build/*.log` so they are readable from the WSL side.
 
-### A. Rust core logic — `cargo test` (30 tests)
+### A. Rust core logic — `cargo test` (41 tests — 30 pre-session-12 + 11 settings, session 12)
 
 ```
 Set-Location <repo>\src\Komorb…DashboardRust\src-tauri; cargo test
@@ -28,7 +28,7 @@ Set-Location <repo>\src\Komorb…DashboardRust\src-tauri; cargo test
 - The only shell-backed tests use `C:\…\repo-dir-that-does-not-exist` for `run_script`, so nothing
   executes; the one real test runs `status --timeout-seconds 5` (read-only).
 
-### B. Frontend logic — `npm test` (78 tests) and typecheck
+### B. Frontend logic — `npm test` (90 tests — 78 pre-session-12 + 12 settings, session 12) and typecheck
 
 ```
 Set-Location <repo>\src\Komorb…DashboardRust; npm test
@@ -89,6 +89,32 @@ On the production machine (Davood's box) or a spare machine — never automated:
 3. Click the header theme toggle → Light/Dark switches immediately, accent colour with it.
 4. Relaunch the dashboard → the last choice persists.
 5. Corrupt the stored value (localStorage) → the app falls back to Dark and does not crash.
+
+### Settings (ticket 06 — session 12)
+- [ ] The Settings tab shows its registry rows plus **Open Folder** and **Factory Reset**
+      below them
+- [ ] Open Folder opens Explorer at the **folder** (`%APPDATA%\KomorebiDashboard`),
+      not with the JSON file selected as a document
+- [ ] Factory Reset asks for confirmation, then restores every default and applies
+      it immediately (theme, scale, console share) with **no restart**
+- [ ] After a save, closing and relaunching the app shows the saved values (the
+      document survives an application restart)
+- [ ] Hand-editing `settings.json` with a value out of range (e.g. fontSize 999)
+      and launching shows the **default**, not the broken value; the file is not
+      deleted or reported broken
+- [ ] Corrupting the file (e.g. writing `{ broken`) and launching: the app starts
+      with defaults AND **says** the file was kept as `settings.corrupt-<timestamp>.json`
+      (a quarantine is reported, never silent)
+
+### Visual system (ticket 07 — session 12)
+- [ ] **Toggle Color** cycles the eight swatches (Blue → Indigo → … → Slate) and the
+      accent changes immediately; the cycle wraps back to Blue
+- [ ] The colour input on the Settings tab adopts the chosen hex, and it survives
+      an application restart (document, not localStorage)
+- [ ] A very light custom hex (e.g. pale yellow) still renders readable accent text
+      (the CSS derives the contrast), and a very dark one does too
+- [ ] Both themes (via Toggle Theme) render every accent — named and custom — with
+      no unstyled area
 
 ### Elevation (ticket 12)
 6. **Unelevated**: click an admin row → the dialog appears with the exact title

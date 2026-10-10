@@ -9,7 +9,7 @@ without bound. The console keeps its own font and size, distinct from the app's.
 
 **Blocked by:** 02 — Execution contract; 04 — Eight tabs rendered from the registry
 
-**Status:** ready-for-agent
+**Status:** partially implemented — 2026-10-11: batching, pinned autoscroll, cancel, status line, and the cap exist from tickets 01-06; the DRAG handle and restart persistence of the chosen height remain
 
 - [ ] Dragging the pane edge resizes it, clamped to 10–60%, and the height applies to every tab
 - [ ] The chosen height persists across restart

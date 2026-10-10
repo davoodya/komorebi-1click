@@ -5,6 +5,8 @@
   import VerbRow from './components/VerbRow.svelte';
   import ConsolePane from './components/ConsolePane.svelte';
   import ElevationDialog from './components/ElevationDialog.svelte';
+  import SettingsPane from './components/SettingsPane.svelte';
+  import { setSettingsPath } from './lib/settings.svelte.ts';
   import { console_ } from './lib/console.svelte.ts';
   import { onOutput } from './lib/ipc';
   import { appInfo, type AppInfo } from './lib/ipc';
@@ -35,10 +37,15 @@
 
   onMount(() => {
     void registry.load();
-    theme.load();
+    // The settings document is the appearance's single writer now: the load
+    // applies theme + accent from the backend before the pane appears.
+    void theme.load();
     void elevation.load();
     appInfo()
-      .then((value) => (info = value))
+      .then((value) => {
+        info = value;
+        setSettingsPath(value.settingsPath);
+      })
       .catch(() => (info = null));
 
     // The output subscription is what turns the backend's ~50 ms batches into
@@ -81,6 +88,16 @@
       <button class="btn btn-theme" type="button" onclick={() => theme.toggle()}>
         {theme.nextLabel}
       </button>
+      <!-- Ticket 07: cycles the eight named swatches; a custom hex lands back
+           on the first swatch rather than on an unstyled value. -->
+      <button
+        class="btn btn-theme"
+        type="button"
+        data-testid="header-toggle-color"
+        onclick={() => void theme.toggleColor()}
+      >
+        Toggle Color
+      </button>
     </div>
   </header>
 
@@ -121,6 +138,12 @@
           <VerbRow {row} />
         {/each}
       </div>
+    {/if}
+    {#if activeTab?.id === 'Settings'}
+      <!-- Ticket 06: the Settings tab's two custom actions. The tab's rows
+           come from the registry like every other tab; this is what the
+           registry cannot express. -->
+      <SettingsPane />
     {/if}
     <ConsolePane />
   </TabLayout>

@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use dashboard_core::registry::{registry, Tab, Verb, TABS};
 use dashboard_core::{locate_scripts, run, ScriptResult};
+use dashboard_core::settings::{self, DashboardSettings, LoadOutcome};
 use std::{
     io::Write,
     path::PathBuf,
@@ -38,7 +39,11 @@ fn app_info(state: tauri::State<'_, AppState>) -> serde_json::Value {
         // The elevation state arrives with the info so the shell can gate the
         // administrative rows the same way the backend does — one registry
         // flags reading, one answer, no second probe.
-        "elevated": dashboard_core::is_elevated()})
+        "elevated": dashboard_core::is_elevated(),
+        // Ticket 06: where the settings document lives, so the Settings pane
+        // can show the real path and Open Folder reveals the real directory
+        // without the frontend re-implementing the profile lookup.
+        "settingsPath": settings::settings_path().display().to_string()})
 }
 /// Relaunch this executable elevated (the `runas` verb) and exit.
 ///
@@ -265,6 +270,63 @@ fn emit_to_stdio(batch: dashboard_core::OutputBatch) {
     let _ = std::io::stderr().flush();
 }
 
+// =============================================================================
+// Ticket 06 — the settings document, over the IPC boundary.
+// =============================================================================
+//
+// The load/save/reset commands are thin wrappers over the pure module: the
+// directory is resolved once per call from the real profile, and every
+// guarantee (normalization, atomic write, quarantine) is the module's.
+
+/// Read the settings document. `quarantined` names the file a corrupt read was
+/// moved to, so the frontend can REPORT the quarantine instead of silently
+/// showing defaults.
+#[tauri::command]
+fn get_settings() -> LoadOutcome {
+    settings::load_from(&settings::settings_dir())
+}
+
+/// Write the settings document atomically; returns the file path written.
+#[tauri::command]
+fn save_settings(settings: DashboardSettings) -> Result<String, String> {
+    settings::save_to(&settings::settings_dir(), &settings)
+        .map(|path| path.display().to_string())
+}
+
+/// Restore every preference to its default and persist that.
+#[tauri::command]
+fn reset_settings() -> Result<String, String> {
+    settings::reset_to_defaults(&settings::settings_dir())
+        .map(|path| path.display().to_string())
+}
+
+/// Open Explorer at the settings DIRECTORY — the folder, not the file: opening
+/// a .json hands it to whatever the user associated with JSON, which may be an
+/// editor, a browser, or nothing.
+#[tauri::command]
+fn reveal_settings_folder() -> Result<String, String> {
+    let dir = settings::settings_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
+    let dir_text = dir.display().to_string();
+
+    #[cfg(windows)]
+    {
+        // A successful SPAWN is the signal, NOT the exit code: explorer.exe is
+        // a shell facade that hands the window off to an existing explorer
+        // process and routinely exits 1 having opened it. Treating that as a
+        // failure reports "Settings error" while the folder is plainly open.
+        let _status = std::process::Command::new("explorer.exe")
+            .arg(&dir_text)
+            .status()
+            .map_err(|e| format!("launch explorer: {e}"))?;
+    }
+    #[cfg(not(windows))]
+    {
+        return Err(format!("reveal is only implemented on Windows (dir: {dir_text})"));
+    }
+    Ok(dir_text)
+}
+
 fn main() {
     let executable = std::env::current_exe().expect("Cannot locate executable");
     let scripts = locate_scripts(&executable);
@@ -285,7 +347,16 @@ fn main() {
             busy: AtomicBool::new(false),
         })
         .invoke_handler(tauri::generate_handler![
-            list_verbs, list_tabs, app_info, run_verb, cancel_run, relaunch_elevated
+            list_verbs,
+            list_tabs,
+            app_info,
+            run_verb,
+            cancel_run,
+            relaunch_elevated,
+            get_settings,
+            save_settings,
+            reset_settings,
+            reveal_settings_folder
         ])
         .run(tauri::generate_context!())
         .expect("Dashboard runtime failed");

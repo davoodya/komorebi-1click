@@ -37,6 +37,7 @@ export const TOKEN_NAMES = [
   '--muted',
   '--shadow',
   '--accent',
+  '--accent-custom',
   '--accent-contrast',
   '--accent-soft',
   '--accent-faint',

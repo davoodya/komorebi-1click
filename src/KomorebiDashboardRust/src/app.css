@@ -29,6 +29,9 @@
     --accent-border:   color-mix(in oklab, var(--accent) 65%, transparent);
 
     /* semantic states */
+    /* ticket 07: the runtime's custom accent seed — applyAppearance writes
+       the user's hex here when the Custom scheme is active */
+    --accent-custom: #4F8FFF;
     --ok:      oklch(72% 0.16 150);
     --warning: oklch(80% 0.15 80);
     --danger:  oklch(65% 0.20 25);
@@ -79,6 +82,25 @@
   [data-theme="light"][data-accent="Emerald"] { --accent: oklch(58% 0.15 155); --accent-contrast: oklch(99% 0 0); }
   [data-theme="light"][data-accent="Teal"]    { --accent: oklch(58% 0.11 190); --accent-contrast: oklch(99% 0 0); }
   [data-theme="light"][data-accent="Slate"]   { --accent: oklch(52% 0.03 255); }
+
+  /* ---- the custom accent (ticket 07): one hex, everything derived ----
+     The eight named swatches are static oklch values; the custom accent is
+     whatever the user picked, written to --accent-custom by the runtime. The
+     companions are calculated FROM it so no value is left dangling, and the
+     contrast flips with the accent's own lightness — a pale yellow gets dark
+     text, a deep navy white text — without a second table of overrides. */
+  [data-accent="Custom"] {
+    --accent: var(--accent-custom, #4F8FFF);
+    /* Two declarations on purpose: the first is the plain contrast every
+       engine understands, the second is the derived one (WebView2's Chromium
+       supports it; anything older drops the line and keeps the first). This
+       is progressive enhancement, not a dead line. */
+    --accent-contrast: oklch(99% 0 0);
+    --accent-contrast: oklch(from var(--accent) calc(1 - l) c h);
+    --accent-soft: color-mix(in oklab, var(--accent) 20%, transparent);
+    --accent-faint: color-mix(in oklab, var(--accent) 8%, transparent);
+    --accent-border: color-mix(in oklab, var(--accent) 40%, transparent);
+  }
 
   /* ---- UI scale: a CSS root scale, verified at 125 % (spec US 64) ---- */
   [data-scale="100"] { --ui-scale: 1; }

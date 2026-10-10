@@ -2,6 +2,7 @@
 // names and payload shapes exist in exactly one place on this side of the
 // boundary and can be checked against the Rust signatures by reading one file.
 import { invoke } from '@tauri-apps/api/core';
+import type { SettingsDocument } from './settings';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 /**
@@ -76,6 +77,12 @@ export interface AppInfo {
    * backend enforces.
    */
   elevated: boolean;
+  /**
+   * Ticket 06: where the settings document lives, from the backend that owns
+   * the profile lookup — shown in the Settings pane and revealed by Open
+   * Folder. Never re-derived here.
+   */
+  settingsPath: string;
 }
 
 /** The event channel the backend streams batches on. */
@@ -142,4 +149,41 @@ export function cancelRun(runId: string): Promise<boolean> {
 
 export function onOutput(handler: (batch: OutputBatch) => void): Promise<UnlistenFn> {
   return listen<OutputBatch>(OUTPUT_EVENT, (event) => handler(event.payload));
+}
+
+// ---------------------------------------------------------------------------
+// Ticket 06 — the settings document.
+//
+// The Rust side is the only writer of the file; these are the three lifecycle
+// calls plus the reveal. `quarantined` comes back from load so the UI can
+// REPORT a corruption the backend defused instead of silently showing
+// defaults the user never chose.
+// ---------------------------------------------------------------------------
+
+/** A load result: the document, and the quarantine a corrupt read produced. */
+export interface SettingsLoadOutcome {
+  settings: SettingsDocument;
+  quarantined: string | null;
+}
+
+export function getSettings(): Promise<SettingsLoadOutcome> {
+  return invoke<SettingsLoadOutcome>('get_settings');
+}
+
+/** Write the document. Resolves to the file path that was written. */
+export function saveSettings(settings: SettingsDocument): Promise<string> {
+  return invoke<string>('save_settings', { settings });
+}
+
+/** Restore and persist every default. Resolves to the file path written. */
+export function resetSettings(): Promise<string> {
+  return invoke<string>('reset_settings');
+}
+
+/**
+ * Open Explorer at the settings DIRECTORY (the folder, not the file — a .json
+ * would otherwise land in whatever program the user associated with JSON).
+ */
+export function revealSettingsFolder(): Promise<string> {
+  return invoke<string>('reveal_settings_folder');
 }

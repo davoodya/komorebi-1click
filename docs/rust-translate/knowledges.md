@@ -364,3 +364,38 @@ The Dashboard exposes **35** primary verbs organized into tabs:
 * **`if ($artifact) { ...probes... }` is a silent skip waiting to happen.**
   A missing build artifact must cost the run an assertion in the OPEN (fail),
   not quietly turn the probes into "unreported".
+
+
+## Session 12 (2026-10-11) — rust tickets 06 & 07
+
+* **The crate directory name contains a non-ASCII character and transcription
+  mangles it.** Never hand-type `src/<crate>/...`: resolve it once
+  (`[d for d in glob('/mnt/h/Repo/komorebi-1click/src/*/') if 'tsconfig.json' in
+  os.listdir(d)][0]`) and derive every path from that. A typed path created a
+  stray duplicate directory mid-session that had to be deleted.
+* **serde field names must match the WPF writer** (`rename_all = "camelCase"`,
+  since `System.Text.Json` serializes camelCase) or every WPF-written key is
+  silently ignored and the defaults win — a round-trip test passes while reading
+  nothing. Pin parity with a test that writes the WPF spelling and reads a
+  non-default value back.
+* **Svelte 5 module state:** `export const x = $state()` may not be reassigned
+  (neither may a private `const`), `export function get x()` is invalid syntax,
+  and reassigning a `let $state()` from a module function is fine. The store
+  pattern that compiles: private `let _x = $state(...)` + exported **functions**
+  that read `_x`; components call the functions (reactive from templates and
+  `$derived`).
+* **Normalization parity beats the tracker's wording.** Ticket 06 says "clamped",
+  the WPF reference RESETS an out-of-band value to its default — the two builds
+  exchange files, so the Rust twin copies the WPF rule and the interpretation is
+  recorded in the module header (a silent clamp disagreement is worse than a
+  deliberate reset).
+* **Custom accent in CSS:** one runtime hex (`--accent-custom`) plus
+  `color-mix(...)` companions and an `oklch(from var(--accent) calc(1 - l) c h)`
+  contrast flip beats a static override table — and it needs exactly one token
+  registered in `tokens.ts` to stay inside the token contract.
+* **The `Confirm-Import`-style two-step button is the honest inline
+  confirmation**: Factory Reset keeps the WPF's exact promise text
+  ("No restart is needed") next to Yes/Cancel; a `confirm()` dialog was never
+  this project's style.
+* **`LoadOutcome` needs `Serialize`** — a Tauri command's return type is
+  serialized across IPC even when the struct holds the whole document.

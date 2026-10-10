@@ -482,6 +482,38 @@ therefore parked with that document.
   the wpf-exemption §3 items are to be implemented **properly/standardly**
   (not ad hoc) when the WPF track resumes.
 
+### 0.8d Session 12 (2026-10-11) — rust tickets 06 & 07 implemented
+
+Session 12 (implement skill) landed the next two rust-translate tickets on the
+Rust track, and a **new dedicated handoff now exists** at
+`docs/rust-translate/handoff-rust-translation.md` for this track — read that one
+for rust-ticket state; this document stays the installer track's handoff.
+
+- **`06-settings`** — done. `src-tauri/src/settings.rs` (typed document,
+  `camelCase` serde to match the WPF writer, normalize-on-every-load-or-save,
+  atomic temp-then-rename, corrupt files quarantined and REPORTED), four Tauri
+  commands (`get_settings`, `save_settings`, `reset_settings`,
+  `reveal_settings_folder` — the folder, not the file), the frontend store
+  `settings.svelte.ts` (injectable backend) and `SettingsPane.svelte` (Open
+  Folder + Factory Reset with the WPF's exact confirmation text). Tests: 11
+  cargo + 12 vitest.
+- **`07-visual-system`** — done. Custom `#rrggbb` accent behind the `Custom`
+  sentinel (`theme.ts` hex parsing + `applyAppearance`, `app.css`
+  `[data-accent="Custom"]` deriving its companions with `color-mix` and an
+  `oklch(from … calc(1 - l) c h)` contrast flip, `--accent-custom` registered as
+  a token), the header's **Toggle Color** cycling the eight swatches, and the
+  settings document is now the appearance's **single writer** (the ticket-12
+  localStorage path is retired by design).
+- **`05-elevation`** — closed by cross-reference: the implementation is the
+  installer track's ticket 12 (sessions 10–11), same gate, same exit-740, same
+  dialog. Its tracker in `tickets/` now says so.
+- Verde: cargo 41, vitest 90/90, `tsc --noEmit` clean,
+  `check-shipped-text.mjs` PASS, `cargo build --release --locked` green.
+- Standing rule reaffirmed by Davood this session: **the full test pass is his**,
+  run once the Rust translation is complete — the automated suites are per-ticket
+  evidence, the visual/scale/clean-machine/sandbox confirmations are his manual
+  pass (recorded in `tests-reminded.md`, left unchecked).
+
 ### 0.9 Session history (compressed, sessions 2–7)
 
 * **Session 2 (2026-10-08) — ticket 01.** The Rust + Tauri shell builds and the
@@ -627,7 +659,16 @@ shipped text.
 | `02-execution-contract` | **done**, verified | stop path, cancel-by-run-id, tree kill, timeouts; probe has dual-mode thresholds (ADR-0019) |
 | `03-registry-cli-twin` | **done**, verified, committed `d64ec0c` | registry of 35 verbs + CLI twin + US 55 wired; see §8 for the one unprovable item |
 | `04-eight-tabs` | **done**, verified, pushed | the real eight-tab strip + tab-selection state; runtime evidence `evidence/ticket04-eight-tabs-uia.md` (12/12 UIA) |
-| 05–13 | not started | **05 (elevation) is next** — the first one with a live parity gap; §9 |
+| 05 | **done** — implemented by the installer track's ticket 12 (sessions 10–11) | same gate, same exit-740, same dialog; tracker updated by cross-reference |
+| 06 | **done** — session 12 | typed settings document + store + pane; 11 cargo + 12 vitest |
+| 07 | **done** — session 12 | custom hex accent + Toggle Color + token contract kept |
+| 08 | not started | document fields + CSS tokens already exist; the Settings-tab UI remains |
+| 09 | **partial** | batching/autoscroll/cancel/status/cap exist; drag-resize handle + persisted height remain |
+| 10–11 | not started | — |
+| 12 | partial | release build + pins exist; icons/installer bundling remain |
+| 13 | partial (automated) | automated coverage exists; the visual/scale/sandbox confirmations are **Davood's manual pass** |
+
+Rust-track detail for the next agent: **`docs/rust-translate/handoff-rust-translation.md`**.
 
 Artefact: `releases/rust/KomorebiDashboard.exe` — **6,450,176 bytes**, release
 profile (rebuilt 2026-10-10, session 7, sha256 `8ea3c3d1fe18ee4f…`). The WPF
@@ -935,55 +976,17 @@ re-diagnosing the host.**
 
 ---
 
-## 9. The exact point to resume from — ticket `05-elevation`
+## 9. The exact point to resume from
 
-Ticket 04 landed in session 7 (evidence:
-`docs/rust-translate/evidence/ticket04-eight-tabs-uia.md`, 12/12 UIA
-assertions), so the frontier is `05-elevation`. What it needs is already in
-place:
+**For the RUST translation track: read `docs/rust-translate/handoff-rust-translation.md`**
+— it is this track's own handoff (session 12, 2026-10-11) with the full ticket
+audit. Short version: tickets 01–07 are done (05 via the installer track's ticket
+12), 09 is partial (drag handle + persisted height), 08/10/11/12-finish/13 remain.
+**The full test pass is Davood's** — remind him when the last Rust ticket lands.
 
-1. **The live parity gap it closes** (§8): `requires_admin` is on every verb and
-   the frontend can dispatch any of them, but the CLI still runs an admin verb
-   without refusing. The WPF build refused before launch
-   (`ElevationService.CanRun`, dedicated exit code 740) — match that, per
-   ADR-0012.
-2. `registry.rs` carries `requires_admin` per verb (ticket 03), so the CLI gate
-   and the dialog's feature list are both **generated** from the table — the
-   dialog must never hard-code a feature list that can drift.
-3. The GUI side is the `Rerun as Administrator` dialog: exactly three actions
-   (OK, Rerun as Administrator, Cancel), then a relaunch elevated with the old
-   instance exiting (one window only), and declining UAC returns to a usable
-   unelevated window with no error state.
-4. **Do not** use process-access escalation for the token probe — ADR-0016; the
-   elevation probe lives in `wsl-isolation`/`godmode` skills and the repo's
-   ADR set.
-
-**DONE in session 8:** the US 55 harness rework (defect R7, §8) —
-`GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid)` via PowerShell P/Invoke
-against a `CreateProcessW(..., CREATE_NEW_PROCESS_GROUP)` child sharing the
-caller's console, behind a `GetConsoleWindow()` host gate; delivery machinery
-measured end-to-end on this host, and the remaining item is Davood's
-real-console run (`node tests\rust-ticket03-interrupt.mjs` from a normal
-window — procedure in §8 US 55). **Davood ran it on 2026-10-10:**
-8 passed / 1 honest SKIP / 0 failed, and the SKIP is now itself the measured
-evidence (it names the pseudo-console cause and re-runs on a real console).
-
-**Next installer ticket: `08-ahk-scripts`.** Davood's sequence: ticket 07
-first (DONE in session 9 — §0.5), then ticket 08. The AHK lifecycle
-scripts (`ahk-toggle.ps1`, `ahk-script.ps1`, `ahk-cleanup.ps1`,
-`ahk-uninstall.ps1`) already ship; the R6 defect (the enable seam writing
-state while the watchdog re-launches) was fixed in session 6 and its suite is
-19/19. What ticket 08 still owes is the **live audit** in the shape of
-sessions 5–9: run the enable/disable cycles and the doctor against the live
-machine and a sandboxed copy, confirm state-file semantics and interpreter
-resolution, and close or extend the tracker's remaining box
-(`SCRIPTS-GUIDE.fa.md` documents ticket 08's bats) only against what was
-measured. The live-machine rule (§11) applies: enable/disable toggles real
-state on Davood's box — restore whatever the audit changes.
-
-**Before you start**, re-verify the baseline in §6.
-
----
+For the INSTALLER track (tickets 01–14): all fourteen are implemented; the
+remaining items are the ones needing a real Windows Sandbox and Davood's manual
+verification (recorded in `tests-reminded.md`).
 
 ## 10. Files changed across the ticket-01→04 sessions (+ sessions 5–8)
 
